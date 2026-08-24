@@ -12,14 +12,23 @@
 //        chat member list)
 //      - a newly signed-up user to INSERT their own row where id = auth.uid() (needed
 //        for self-service Sign Up — this runs as that new user, not as an admin)
-//      - a user to UPDATE their own row (self-service name/avatar edits — password and
-//        email changes go through Supabase Auth directly, not this table)
-//      - Admin-role users to UPDATE/DELETE any row (staff management)
-//  - A trigger (or this code's upsert-on-signup) that creates a `profiles` row when a
-//    new auth user is created, defaulting role to 'Worker'.
+//      - a user to UPDATE their own row EXCEPT its role (self-service name/avatar
+//        edits — password and email changes go through Supabase Auth directly, not
+//        this table; role changes are an Admin-only action, never self-service)
+//      - Admin-role users to UPDATE/DELETE any row, including changing someone's role
+//        (Staff Manager)
+//  - A database trigger that creates a `profiles` row when a new auth user is created:
+//    'Admin' for the very first account ever created in this project (that's how a
+//    fresh deployment gets its first Admin — deterministically, server-side, with no
+//    client-side "claim" step), 'Worker' for every account after that.
+//  - A trigger that refuses any update or delete that would leave zero Admin accounts,
+//    so Staff Manager's role changes and worker deletion are safe to expose to any
+//    Admin without a client-side check being the only thing standing between the app
+//    and a locked-out workspace.
 //  - A public Storage bucket named `avatars` if you want profile photo uploads, with
 //    a policy allowing authenticated users to upload/update objects under a path
 //    matching their own auth.uid() (e.g. `{uid}/*`) and public read access.
+// See supabase/profiles-rls-policies.sql for all of the above, ready to run as-is.
 
 import { getSupabaseClient, getAdminActionClient } from './supabaseClient';
 
@@ -221,24 +230,6 @@ export const signUpNewAccount = async ({ name, email, password }) => {
   return { success: true, needsEmailConfirmation: false, user: profile };
 };
 
-// Bootstrap action: let the current account become the very first Admin when literally
-// no Admin exists yet in this Supabase project. Necessary because self-signup always
-// creates 'Worker' accounts (by design — see signUpNewAccount) and there is otherwise no
-// way for a fresh Supabase-backed deployment to ever get its first Admin: an Admin action
-// is normally required to promote someone, but there's no Admin yet to take it. The RLS
-// policy on profiles enforces the "no Admin exists yet" condition server-side too — this
-// isn't just a client-side check — so this call fails safely once any Admin exists.
-export const claimFirstAdmin = async (userId) => {
-  const supabase = getSupabaseClient();
-  const { error } = await supabase.from('profiles').update({ role: 'Admin' }).eq('id', userId);
-  if (error) {
-    console.error('[supabaseAuth] claimFirstAdmin failed:', error.message);
-    return { success: false, error: error.message };
-  }
-  const profile = await fetchProfile(userId);
-  return { success: true, user: profile };
-};
-
 // Self-service: update your own display name / avatar URL (and email, which also
 // requires updating it on the Supabase Auth side — see updateAuthEmail below).
 export const updateOwnProfileFields = async (userId, fields) => {
@@ -278,6 +269,15 @@ export const uploadAvatarImage = async (userId, blob, contentType) => {
 export const updateProfileStatus = async (userId, status) => {
   const supabase = getSupabaseClient();
   const { error } = await supabase.from('profiles').update({ status }).eq('id', userId);
+  return { success: !error, error: error?.message };
+};
+
+export const updateProfileRole = async (userId, role) => {
+  const supabase = getSupabaseClient();
+  const { error } = await supabase.from('profiles').update({ role }).eq('id', userId);
+  // The "last Admin" invariant is enforced server-side by a database trigger (see
+  // profiles-rls-policies.sql), so this can fail even for a legitimate Admin caller —
+  // that's intentional defense in depth, not a bug to work around client-side.
   return { success: !error, error: error?.message };
 };
 

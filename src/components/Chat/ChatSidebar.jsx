@@ -1,32 +1,20 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useChat } from '../../context/ChatContext';
-import { Search, Plus, Hash, User, Settings, ShieldAlert, AlertTriangle } from 'lucide-react';
+import { Search, Plus, Hash, User, Settings, AlertTriangle } from 'lucide-react';
 
 export const ChatSidebar = ({ onOpenGroupCreator, onSelectChat, onOpenAdmin, onOpenProfile }) => {
-  const { users, currentUser, isAdmin, claimAdminAccess, supabaseMode, refreshUsers } = useAuth();
+  const { users, currentUser, isAdmin, supabaseMode, refreshUsers } = useAuth();
   const { groups, activeChat, setActiveChat, searchQuery, setSearchQuery } = useChat();
-  const [claiming, setClaiming] = useState(false);
   const [retrying, setRetrying] = useState(false);
 
-  // No Admin exists anywhere yet — this is the bootstrap gap on a fresh Supabase-backed
-  // deployment (local mode always ships a seeded Admin, so this is never true there).
-  const noAdminExists = !isAdmin && users.length > 0 && !users.some(u => u.role === 'Admin');
-
-  // The staff directory came back empty in Supabase mode. This is NOT the normal "no
-  // admin yet" bootstrap case (that needs at least your own row to exist) — an empty
-  // list here almost always means fetchAllProfiles hit an error (bad RLS policy, wrong
-  // Supabase URL/key, or a network issue) and silently returned [] rather than throwing.
-  // Surfacing this directly means a real problem is never just invisible.
+  // The staff directory came back empty in Supabase mode. The very first account on a
+  // fresh deployment is made Admin automatically by a database trigger (see
+  // profiles-rls-policies.sql), so an authenticated non-admin seeing zero rows here isn't
+  // a normal state — it almost always means fetchAllProfiles hit an error (missing RLS
+  // policy, wrong Supabase URL/key, or a network issue) and silently returned [] rather
+  // than throwing. Surfacing this directly means a real problem is never just invisible.
   const directoryFailedToLoad = supabaseMode && !isAdmin && users.length === 0;
-
-  const handleClaimAdmin = async () => {
-    if (!window.confirm('No admin exists yet for this workspace. Make your own account the Admin now? This gives you full Staff Manager, Groups, and Settings access.')) return;
-    setClaiming(true);
-    const result = await claimAdminAccess();
-    setClaiming(false);
-    if (!result.success) window.alert(result.error || 'Could not claim admin access.');
-  };
 
   const handleRetry = async () => {
     setRetrying(true);
@@ -225,19 +213,6 @@ export const ChatSidebar = ({ onOpenGroupCreator, onSelectChat, onOpenAdmin, onO
             style={{ flexShrink: 0, color: 'var(--amber-primary)' }}
           >
             <Settings size={17} />
-          </button>
-        )}
-
-        {noAdminExists && (
-          <button
-            onClick={handleClaimAdmin}
-            disabled={claiming}
-            title="No admin exists yet — claim Admin access"
-            className="btn btn-primary"
-            style={{ flexShrink: 0, fontSize: 11, padding: '6px 10px', minHeight: 30, whiteSpace: 'nowrap' }}
-          >
-            <ShieldAlert size={14} />
-            {claiming ? 'Claiming…' : 'Claim Admin'}
           </button>
         )}
       </div>

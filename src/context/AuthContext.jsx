@@ -370,6 +370,48 @@ export const AuthProvider = ({ children }) => {
     localDb.saveUsers(updatedUsers);
   };
 
+  // Admin Action: Change a staff member's role (Worker / Dispatcher / Admin). This is the
+  // one place Admin status itself is granted or revoked post-signup — every new account
+  // starts as a Worker (see the profiles trigger / local seed data), and becomes Admin
+  // only if an existing Admin explicitly promotes them here.
+  //
+  // The "never end up with zero Admins" rule is enforced in two layers on purpose: this
+  // client-side check gives an immediate, friendly error instead of a network round trip,
+  // but the real, non-bypassable guarantee is the database trigger in
+  // profiles-rls-policies.sql (prevent_removing_last_admin) — so even a stale `users` list
+  // here, a second admin tab, or a direct API call can't actually create a zero-admin
+  // workspace.
+  const updateWorkerRole = async (userId, newRole) => {
+    const target = users.find(u => u.id === userId);
+    if (!target) return { success: false, error: 'Worker not found.' };
+    const demotingLastAdmin = target.role === 'Admin' && newRole !== 'Admin'
+      && users.filter(u => u.role === 'Admin').length <= 1;
+    if (demotingLastAdmin) {
+      return { success: false, error: 'This is the only Admin account — promote someone else to Admin first.' };
+    }
+    if (supabaseMode) {
+      const result = await supaAuth.updateProfileRole(userId, newRole);
+      if (result.success) {
+        setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
+        // If admins change their own role, currentUser must reflect it immediately too —
+        // isAdmin derives from currentUser, not from the users list, so without this the
+        // gear icon / Admin Dashboard would stay visible until the next reload despite
+        // the confirmation dialog promising instant effect.
+        if (userId === currentUser?.id) setCurrentUser(prev => ({ ...prev, role: newRole }));
+      }
+      return result;
+    }
+    const updatedUsers = users.map(u => u.id === userId ? { ...u, role: newRole } : u);
+    setUsers(updatedUsers);
+    localDb.saveUsers(updatedUsers);
+    if (userId === currentUser?.id) {
+      const updatedSelf = { ...currentUser, role: newRole };
+      setCurrentUser(updatedSelf);
+      localDb.setCurrentUser(updatedSelf);
+    }
+    return { success: true };
+  };
+
   // Admin Action: Delete Worker
   const deleteWorker = async (userId) => {
     if (supabaseMode) {
@@ -387,26 +429,6 @@ export const AuthProvider = ({ children }) => {
     const merged = { ...settings, ...newSettings };
     setSettings(merged);
     localDb.saveSettings(merged);
-  };
-
-  // Bootstrap: claim Admin access when no Admin exists anywhere in the system yet. Local
-  // mode always ships a seeded Admin account, so this branch is effectively Supabase-only
-  // in practice — it's what gets a brand-new Supabase-backed deployment its first Admin.
-  const claimAdminAccess = async () => {
-    if (!currentUser) return { success: false, error: 'Not signed in.' };
-    if (currentUser.role === 'Admin') return { success: true };
-    if (users.some(u => u.role === 'Admin')) {
-      return { success: false, error: 'An admin already exists for this workspace. Ask them for access.' };
-    }
-    if (!supabaseMode) {
-      return { success: false, error: 'Local mode already has a built-in admin account.' };
-    }
-    const result = await supaAuth.claimFirstAdmin(currentUser.id);
-    if (result.success) {
-      setCurrentUser(result.user);
-      supaAuth.fetchAllProfiles().then(setUsers);
-    }
-    return result;
   };
 
   // Manual re-fetch of the staff directory. Exposed so the UI can offer a "Retry" action
@@ -448,9 +470,9 @@ export const AuthProvider = ({ children }) => {
       resetWorkerPassword,
       addWorker,
       updateWorkerStatus,
+      updateWorkerRole,
       deleteWorker,
       updateSettings,
-      claimAdminAccess,
       refreshUsers
     }}>
       {children}

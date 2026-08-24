@@ -22,6 +22,18 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Declaring this job as part of the `github-pages` environment (same as the deploy
+    # job below) is what lets it see secrets added as Environment secrets scoped to
+    # `github-pages` — a very common place to add them, since it's the environment
+    # GitHub auto-creates the first time you set up Pages via Actions. Without this,
+    # only plain Repository secrets (Settings → Secrets and variables → Actions →
+    # Repository secrets) would be visible here; Environment secrets under the
+    # `github-pages` environment specifically would silently resolve to empty strings
+    # in this job, with no error — VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY would bake
+    # in as blank, and the app would quietly fall back to local mode with nothing in
+    # the build log to indicate why.
+    environment:
+      name: github-pages
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -35,8 +47,46 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Verify Supabase secrets are visible to this job (diagnostic only — never prints the actual values)
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$VITE_SUPABASE_URL" ]; then
+            echo "❌ VITE_SUPABASE_URL is EMPTY in this job — the build will silently fall back to local mode."
+            echo "   Check: Settings → Secrets and variables → Actions → Repository secrets (not Environment secrets)."
+          else
+            echo "✅ VITE_SUPABASE_URL is set"
+          fi
+          if [ -z "$VITE_SUPABASE_ANON_KEY" ]; then
+            echo "❌ VITE_SUPABASE_ANON_KEY is EMPTY in this job — the build will silently fall back to local mode."
+            echo "   Check: Settings → Secrets and variables → Actions → Repository secrets (not Environment secrets)."
+          else
+            echo "✅ VITE_SUPABASE_ANON_KEY is set"
+          fi
+
       - name: Build
+        env:
+          # Baking these in at build time (instead of relying on the in-app Admin Settings
+          # screen, which only saves to that ONE browser's localStorage) is what makes
+          # Supabase mode — and everything gated on it, including Admin access — actually
+          # consistent across every browser and device hitting this deployment. Without
+          # this, only the one browser where someone manually typed the URL/key into
+          # Admin Settings would ever be in Supabase mode; everywhere else silently falls
+          # back to local mode, which looks exactly like "the admin dashboard is missing."
+          # Set these in this repo's Settings → Secrets and variables → Actions.
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: npm run build
+
+      - name: List build output (diagnostic)
+        run: |
+          echo "== Top-level dist/ contents =="
+          ls -la dist/
+          echo ""
+          echo "== Checking for manifest.json and sw.js specifically =="
+          test -f dist/manifest.json && echo "✅ dist/manifest.json exists" || echo "❌ dist/manifest.json MISSING"
+          test -f dist/sw.js && echo "✅ dist/sw.js exists" || echo "❌ dist/sw.js MISSING"
 
       - name: Add SPA fallback (404.html) and .nojekyll
         run: |
@@ -47,6 +97,10 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: dist
+          # actions/upload-pages-artifact excludes dotfiles (like .nojekyll) by default —
+          # without this, GitHub Pages runs the site through Jekyll processing, which can
+          # interfere with how plain files at the site root (manifest.json, sw.js) resolve.
+          include-hidden-files: true
 
   deploy:
     needs: build
