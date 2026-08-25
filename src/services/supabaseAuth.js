@@ -64,30 +64,56 @@ export const fetchAllProfiles = async () => {
 
 // Self-heal: if we have an authenticated user but no profiles row exists for them, this
 // is almost always someone whose row could never be written at sign-up time — either the
-// RLS policy wasn't in place yet, or (the common case) the Supabase project requires email
-// confirmation, so signUp() ran with no session and the self-insert policy had nothing to
-// authenticate as. Since we're now genuinely authenticated as this exact user, auth.uid() =
-// id, so the self-insert policy applies and we can safely create the missing row instead of
-// permanently locking them out. Their originally-typed name survives this gap because
-// signUpNewAccount stores it in the auth user's metadata, not just in the (possibly-never-
-// written) profiles row.
+// RLS/trigger setup from profiles-rls-policies.sql hasn't been (re-)run in this Supabase
+// project yet, or (a normal case even with everything set up correctly) the project
+// requires email confirmation, so signUp() ran with no session and the self-insert policy
+// had nothing to authenticate as. Since we're now genuinely authenticated as this exact
+// user, auth.uid() = id, so the self-insert policy applies and we can safely create the
+// missing row instead of permanently locking them out. Their originally-typed name
+// survives this gap because signUpNewAccount stores it in the auth user's metadata, not
+// just in the (possibly-never-written) profiles row.
+//
+// This mirrors the "first account ever becomes Admin" rule from the on_auth_user_created
+// database trigger — not because both should exist (the trigger is the real, atomic
+// source of truth and normally creates the row before this ever runs), but as defense in
+// depth: if the trigger was never installed (e.g. an older profiles-rls-policies.sql is
+// still what's been run against this project), this is the only remaining path that
+// creates a profile at all, and it needs to get the very first account right too, or a
+// fresh deployment ends up with a Worker and, again, no way for anyone to become Admin.
+//
+// Returns { profile, error } rather than just profile so callers can show the real
+// Postgres/RLS error text instead of a generic "no profile found" message that gives
+// no clue which of the above actually happened.
 const ensureProfile = async (user) => {
   let profile = await fetchProfile(user.id);
-  if (!profile) {
-    const supabase = getSupabaseClient();
-    const fallbackName = user.user_metadata?.name || user.email.split('@')[0];
-    const { error: healError } = await supabase.from('profiles').upsert({
-      id: user.id,
-      name: fallbackName,
-      email: user.email,
-      role: 'Worker',
-      department: '',
-      status: 'Active',
-      phone: ''
-    });
-    if (!healError) profile = await fetchProfile(user.id);
+  if (profile) return { profile, error: null };
+
+  const supabase = getSupabaseClient();
+  const fallbackName = user.user_metadata?.name || user.email.split('@')[0];
+  const existing = await fetchAllProfiles();
+  const isFirstAccount = existing.length === 0;
+
+  const { error: healError } = await supabase.from('profiles').upsert({
+    id: user.id,
+    name: fallbackName,
+    email: user.email,
+    role: isFirstAccount ? 'Admin' : 'Worker',
+    department: '',
+    status: 'Active',
+    phone: ''
+  });
+
+  if (healError) {
+    console.error('[supabaseAuth] ensureProfile self-heal insert failed:', healError.message);
+    return { profile: null, error: healError.message };
   }
-  return profile;
+
+  profile = await fetchProfile(user.id);
+  if (!profile) {
+    console.error('[supabaseAuth] ensureProfile: insert reported success but the row could not be read back — check the SELECT policy on profiles.');
+    return { profile: null, error: 'Profile was created but could not be read back. Check your Supabase SELECT policy on profiles.' };
+  }
+  return { profile, error: null };
 };
 
 export const signInWithPassword = async (email, password) => {
@@ -95,11 +121,12 @@ export const signInWithPassword = async (email, password) => {
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) return { success: false, error: mapAuthError(error) };
 
-  const profile = await ensureProfile(data.user);
+  const { profile, error: healError } = await ensureProfile(data.user);
 
   if (!profile) {
     await supabase.auth.signOut();
-    return { success: false, error: 'No staff profile found for this account. Contact an administrator.' };
+    const detail = healError ? ` (${healError})` : '';
+    return { success: false, error: `No staff profile found for this account${detail}. Contact an administrator.` };
   }
   if (profile.status === 'Banned') {
     await supabase.auth.signOut();
@@ -129,7 +156,7 @@ export const getRestoredSession = async () => {
   // session from it (detectSessionInUrl) *before* the person ever hits the login form.
   // Without self-healing here too, that first post-confirmation load would find no
   // profile row and silently sign them back out, discarding the account.
-  const profile = await ensureProfile(session.user);
+  const { profile } = await ensureProfile(session.user);
   if (!profile || profile.status === 'Banned' || profile.status === 'Deleted') {
     await supabase.auth.signOut();
     return null;
@@ -204,9 +231,12 @@ export const createWorkerAccount = async ({ name, email, password, role, departm
   return { success: true, user: toAppUser({ id: data.user.id, name, email, role, department, phone, status: 'Active' }) };
 };
 
-// Self-service sign-up: anyone can create their own account. Always defaults to the
-// 'Worker' role — a self-serve path must never be able to grant Admin access; role
-// upgrades stay an explicit Admin action in Staff Manager.
+// Self-service sign-up: anyone can create their own account. This never grants Admin
+// itself — that's decided by ensureProfile/the database trigger purely based on whether
+// this is the very first account in the whole system, not by anything in this function —
+// so a self-serve path can never be used to grant Admin to an arbitrary account. Every
+// account after the first one lands as 'Worker'; from there, becoming Admin is exclusively
+// an explicit action an existing Admin takes in Staff Manager.
 export const signUpNewAccount = async ({ name, email, password }) => {
   const supabase = getSupabaseClient();
   // Storing `name` in auth user_metadata (not just the profiles table) means it survives
@@ -221,12 +251,16 @@ export const signUpNewAccount = async ({ name, email, password }) => {
   // there is no session yet at this point — signUp() only creates the auth.users row and
   // sends a confirmation email. Attempting the profiles insert here would run as an
   // unauthenticated request and get blocked by RLS, so we skip it entirely: the row gets
-  // created automatically (via ensureProfile's self-heal) the moment this person actually
-  // has a session, whether that's clicking the confirmation link or logging in afterward.
+  // created automatically (via the on_auth_user_created trigger, or ensureProfile's
+  // self-heal as a fallback) the moment this person actually has a session, whether
+  // that's clicking the confirmation link or logging in afterward.
   const needsEmailConfirmation = !data.session;
   if (needsEmailConfirmation) return { success: true, needsEmailConfirmation: true };
 
-  const profile = await ensureProfile(data.user);
+  const { profile, error: healError } = await ensureProfile(data.user);
+  if (!profile) {
+    return { success: false, error: `Account created, but profile setup failed${healError ? ` (${healError})` : ''}.` };
+  }
   return { success: true, needsEmailConfirmation: false, user: profile };
 };
 
