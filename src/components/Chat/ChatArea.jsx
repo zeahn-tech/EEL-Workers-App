@@ -6,8 +6,9 @@ import { MessageBubble } from './MessageBubble';
 import { FilePickerModal } from './FilePickerModal';
 import { ImagePickerModal } from './ImagePickerModal';
 import { LocationShareModal } from './LocationShareModal';
+import { AttachmentMenu } from './AttachmentMenu';
 import { Lightbox } from '../UI/Lightbox';
-import { Send, Paperclip, Image as ImageIcon, MapPin, Hash, Lock, Mic, Trash2, Send as SendIcon } from 'lucide-react';
+import { Send, Plus, Hash, Lock, Trash2, Send as SendIcon } from 'lucide-react';
 
 const formatDuration = (seconds) => {
   const s = Math.max(0, Math.round(seconds || 0));
@@ -25,6 +26,7 @@ export const ChatArea = () => {
   const { isRecording, elapsedSeconds, error: recordError, startRecording, stopRecording, cancelRecording } = useVoiceRecorder();
 
   const [inputText, setInputText] = useState('');
+  const [attachOpen, setAttachOpen] = useState(false);
   const [fileOpen, setFileOpen] = useState(false);
   const [imageOpen, setImageOpen] = useState(false);
   const [locationOpen, setLocationOpen] = useState(false);
@@ -147,22 +149,10 @@ export const ChatArea = () => {
           padding: '8px 12px', borderTop: '1px solid var(--border-subtle)',
           display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0
         }}>
-          {/* Attachment Icons */}
-          <button className="btn btn-secondary btn-icon" onClick={() => setFileOpen(true)}
-            style={{ width: 36, height: 36, minHeight: 36 }} title="Attach Document">
-            <Paperclip size={16} color="var(--amber-primary)" />
-          </button>
-          <button className="btn btn-secondary btn-icon" onClick={() => setImageOpen(true)}
-            style={{ width: 36, height: 36, minHeight: 36 }} title="Attach Image">
-            <ImageIcon size={16} color="var(--amber-primary)" />
-          </button>
-          <button className="btn btn-secondary btn-icon" onClick={() => setLocationOpen(true)}
-            style={{ width: 36, height: 36, minHeight: 36 }} title="Share Location">
-            <MapPin size={16} color="var(--amber-primary)" />
-          </button>
-          <button className="btn btn-secondary btn-icon" onClick={handleMicClick} disabled={!activeChat}
-            style={{ width: 36, height: 36, minHeight: 36 }} title="Record Voice Note">
-            <Mic size={16} color="var(--amber-primary)" />
+          {/* Attach — opens a popup with document / image / location / voice note */}
+          <button className="btn btn-secondary btn-icon" onClick={() => setAttachOpen(true)} disabled={!activeChat}
+            style={{ width: 36, height: 36, minHeight: 36 }} title="Attach">
+            <Plus size={18} color="var(--amber-primary)" />
           </button>
 
           {/* Text Input */}
@@ -193,6 +183,15 @@ export const ChatArea = () => {
       )}
 
       {/* Modals */}
+      <AttachmentMenu
+        isOpen={attachOpen}
+        onClose={() => setAttachOpen(false)}
+        onFile={() => setFileOpen(true)}
+        onImage={() => setImageOpen(true)}
+        onLocation={() => setLocationOpen(true)}
+        onVoice={handleMicClick}
+        voiceDisabled={!activeChat}
+      />
       <FilePickerModal isOpen={fileOpen} onClose={() => setFileOpen(false)} onSendFile={sendFileMessage} />
       <ImagePickerModal isOpen={imageOpen} onClose={() => setImageOpen(false)} onSendImage={sendImageMessage} />
       <LocationShareModal isOpen={locationOpen} onClose={() => setLocationOpen(false)} onSendLocation={sendLocationMessage} />

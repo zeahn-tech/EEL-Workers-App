@@ -58,7 +58,11 @@ export const GroupCreator = ({ isOpen, onClose, editingGroup }) => {
     onClose();
   };
 
-  const eligibleUsers = users.filter(u => u.id !== currentUser?.id);
+  // Deleted accounts are hidden from the chat directory/sidebar everywhere else in the
+  // app, so they shouldn't be offered as enrollable members here either. If a deleted
+  // user was already a member of a group being edited, submitting the form still drops
+  // them from `members` since they're no longer in this list to stay checked.
+  const eligibleUsers = users.filter(u => u.id !== currentUser?.id && u.status !== 'Deleted');
 
   return (
     <div className="modal-overlay animate-fade-in" onClick={onClose}>

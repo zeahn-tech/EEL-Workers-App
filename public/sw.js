@@ -1,4 +1,4 @@
-const CACHE_NAME = 'eel-messenger-v2';
+const CACHE_NAME = 'eel-messenger-v4';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
