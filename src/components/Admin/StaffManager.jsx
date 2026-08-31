@@ -1,34 +1,30 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import {
-  UserPlus,
-  Search,
-  Trash2,
-  Ban,
-  UserCheck,
-  ShieldAlert,
-  X,
-  Building2,
-  Phone,
-  Mail,
+import { 
+  UserPlus, 
+  Search, 
+  Trash2, 
+  Ban, 
+  UserCheck, 
+  ShieldAlert, 
+  X, 
+  Building2, 
+  Phone, 
+  Mail, 
   User as UserIcon,
   KeyRound,
   Copy,
-  Check,
-  Crown
+  Check
 } from 'lucide-react';
 
-const ROLE_OPTIONS = ['Worker', 'Dispatcher', 'Admin'];
-
 export const StaffManager = () => {
-  const { users, currentUser, addWorker, updateWorkerStatus, updateWorkerRole, deleteWorker, resetWorkerPassword, supabaseMode } = useAuth();
+  const { users, addWorker, updateWorkerStatus, deleteWorker, resetWorkerPassword, supabaseMode } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
   const [issuedCreds, setIssuedCreds] = useState(null); // { name, email, tempPassword } or { name, email, emailSent }
   const [copied, setCopied] = useState(false);
-  const [changingRoleFor, setChangingRoleFor] = useState(null); // userId currently mid-request
 
   // Form State for Adding Worker
   const [formData, setFormData] = useState({
@@ -45,8 +41,6 @@ export const StaffManager = () => {
     u.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
     u.department.toLowerCase().includes(searchQuery.toLowerCase())
   );
-
-  const adminCount = users.filter(u => u.role === 'Admin').length;
 
   const handleAddWorker = async (e) => {
     e.preventDefault();
@@ -84,27 +78,6 @@ export const StaffManager = () => {
     if (!window.confirm(`Are you sure you want to delete worker ${u.name}?`)) return;
     const result = await deleteWorker(u.id);
     if (result && result.error) alert(`Could not delete worker: ${result.error}`);
-  };
-
-  const handleRoleChange = async (u, newRole) => {
-    if (newRole === u.role) return;
-    const isPromotion = newRole === 'Admin';
-    const isDemotion = u.role === 'Admin' && newRole !== 'Admin';
-    const isSelf = u.id === currentUser?.id;
-
-    if (isDemotion) {
-      const msg = isSelf
-        ? `You're about to remove your own Admin access and switch to ${newRole}. You'll immediately lose access to Staff Manager, Groups, and Settings. Continue?`
-        : `Remove Admin access from ${u.name} and set their role to ${newRole}? They'll lose Staff Manager, Groups, and Settings access immediately.`;
-      if (!window.confirm(msg)) return;
-    } else if (isPromotion) {
-      if (!window.confirm(`Promote ${u.name} to Admin? They'll get full access to Staff Manager, Groups, and Settings — the same access level you have.`)) return;
-    }
-
-    setChangingRoleFor(u.id);
-    const result = await updateWorkerRole(u.id, newRole);
-    setChangingRoleFor(null);
-    if (result && result.error) alert(`Could not change role: ${result.error}`);
   };
 
   const copyCreds = () => {
@@ -181,28 +154,11 @@ export const StaffManager = () => {
                   </div>
                   <div>
                     <h3 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-main)' }}>
-                      {u.name} {u.role === 'Admin' && <Crown size={13} color="var(--amber-primary)" style={{ display: 'inline', verticalAlign: -1 }} />}
+                      {u.name} {u.role === 'Admin' && '👑'}
                     </h3>
-                    {u.status === 'Deleted' ? (
-                      <span style={{ fontSize: '11px', color: 'var(--amber-primary)', fontWeight: 600 }}>
-                        {u.role}
-                      </span>
-                    ) : (
-                      <select
-                        className="input-field"
-                        value={u.role}
-                        disabled={changingRoleFor === u.id}
-                        onChange={e => handleRoleChange(u, e.target.value)}
-                        title={u.role === 'Admin' && adminCount <= 1 ? 'This is the only Admin — promote someone else first to change this' : 'Change role'}
-                        style={{
-                          fontSize: '11px', fontWeight: 600, color: 'var(--amber-primary)',
-                          padding: '2px 6px', minHeight: 'auto', height: 22, width: 'auto',
-                          border: '1px solid var(--border-subtle)', background: 'transparent'
-                        }}
-                      >
-                        {ROLE_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
-                      </select>
-                    )}
+                    <span style={{ fontSize: '11px', color: 'var(--amber-primary)', fontWeight: 600 }}>
+                      {u.role}
+                    </span>
                   </div>
                 </div>
 
@@ -228,11 +184,7 @@ export const StaffManager = () => {
               </div>
             </div>
 
-            {/* Status actions (suspend / ban / reset password / delete) are intentionally
-                scoped to non-Admin rows only — this keeps Admins from locking each other
-                out via suspend/ban. Role changes (including demoting an Admin) are handled
-                by the selector above instead, which is safe to expose for every row because
-                the "never zero Admins" rule is enforced in the database itself. */}
+            {/* Action Buttons */}
             {u.role !== 'Admin' && (
               <div style={{ 
                 paddingTop: '12px', 

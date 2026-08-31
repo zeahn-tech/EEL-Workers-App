@@ -1,26 +1,11 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useChat } from '../../context/ChatContext';
-import { Search, Plus, Hash, User, Settings, AlertTriangle } from 'lucide-react';
+import { Search, Plus, Hash, User, Settings } from 'lucide-react';
 
 export const ChatSidebar = ({ onOpenGroupCreator, onSelectChat, onOpenAdmin, onOpenProfile }) => {
-  const { users, currentUser, isAdmin, supabaseMode, refreshUsers } = useAuth();
+  const { users, currentUser, isAdmin } = useAuth();
   const { groups, activeChat, setActiveChat, searchQuery, setSearchQuery } = useChat();
-  const [retrying, setRetrying] = useState(false);
-
-  // The staff directory came back empty in Supabase mode. The very first account on a
-  // fresh deployment is made Admin automatically by a database trigger (see
-  // profiles-rls-policies.sql), so an authenticated non-admin seeing zero rows here isn't
-  // a normal state — it almost always means fetchAllProfiles hit an error (missing RLS
-  // policy, wrong Supabase URL/key, or a network issue) and silently returned [] rather
-  // than throwing. Surfacing this directly means a real problem is never just invisible.
-  const directoryFailedToLoad = supabaseMode && !isAdmin && users.length === 0;
-
-  const handleRetry = async () => {
-    setRetrying(true);
-    await refreshUsers();
-    setRetrying(false);
-  };
 
   const handleSelect = (item) => {
     setActiveChat(item);
@@ -151,27 +136,6 @@ export const ChatSidebar = ({ onOpenGroupCreator, onSelectChat, onOpenAdmin, onO
         })}
       </div>
 
-      {/* Directory failed to load — surfaced directly instead of silently showing nothing */}
-      {directoryFailedToLoad && (
-        <div style={{
-          flexShrink: 0, margin: '0 10px 8px', padding: '10px 12px',
-          background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.4)',
-          borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column', gap: 6
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: '#FCA5A5' }}>
-            <AlertTriangle size={14} /> Couldn't load the staff directory
-          </div>
-          <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0 }}>
-            Open your browser console for the exact error. Common causes: the RLS policies
-            SQL hasn't been run yet, or the Supabase URL/Anon Key aren't set for this device.
-          </p>
-          <button onClick={handleRetry} disabled={retrying} className="btn btn-secondary"
-            style={{ alignSelf: 'flex-start', fontSize: 11, padding: '4px 10px', minHeight: 26 }}>
-            {retrying ? 'Retrying…' : 'Retry'}
-          </button>
-        </div>
-      )}
-
       {/* Sidebar Footer — account + admin settings, moved here to keep the top header clean */}
       <div style={{
         flexShrink: 0, padding: '10px', borderTop: '1px solid var(--border-subtle)',
@@ -200,7 +164,7 @@ export const ChatSidebar = ({ onOpenGroupCreator, onSelectChat, onOpenAdmin, onO
               {currentUser?.name}
             </div>
             <div style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {currentUser?.role} · {supabaseMode ? 'Supabase' : 'Local'}
+              {currentUser?.role}
             </div>
           </div>
         </button>
