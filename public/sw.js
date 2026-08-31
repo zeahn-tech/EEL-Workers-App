@@ -1,69 +1,92 @@
-const CACHE_NAME = 'eel-pwa-v1';
-const STATIC_ASSETS = [
-  '/',
-  '/index.html',
-  '/manifest.json',
-  '/icon-192.png',
-  '/icon-512.png'
+const CACHE_NAME = 'eel-messenger-v4';
+const ASSETS_TO_CACHE = [
+  './',
+  './index.html',
+  './manifest.json',
+  './favicon.svg',
+  './offline.html'
 ];
 
-// Install: cache static shell
+// Install event - Cache static assets
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_ASSETS);
-    }).catch(() => {
-      // Silent fail for missing assets during install
-    })
+      console.log('[SW] Caching app shell');
+      return cache.addAll(ASSETS_TO_CACHE);
+    }).then(() => self.skipWaiting())
   );
-  self.skipWaiting();
 });
 
-// Activate: clean old caches
+// Activate event - Clean up old caches
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
+    caches.keys().then((keyList) => {
       return Promise.all(
-        cacheNames
-          .filter((name) => name !== CACHE_NAME)
-          .map((name) => caches.delete(name))
+        keyList.map((key) => {
+          if (key !== CACHE_NAME) {
+            console.log('[SW] Removing old cache', key);
+            return caches.delete(key);
+          }
+        })
       );
-    })
+    }).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
-// Fetch: network-first for API calls, cache-first for static assets
+// Fetch event - Network first, fall back to cache then offline page
 self.addEventListener('fetch', (event) => {
-  const { request } = event;
-  const url = new URL(request.url);
+  if (event.request.method !== 'GET') return;
 
-  // NEVER intercept Supabase API calls — let them go straight to network
-  if (url.hostname.includes('supabase.co')) {
-    return;
-  }
-
-  // For same-origin static assets, try cache first
-  if (url.origin === self.location.origin) {
-    event.respondWith(
-      caches.match(request).then((cached) => {
-        if (cached) return cached;
-        return fetch(request).then((response) => {
-          // Only cache valid GET responses
-          if (request.method === 'GET' && response.status === 200) {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+  event.respondWith(
+    fetch(event.request)
+      .then((response) => {
+        // Dynamic caching for static assets
+        if (response.status === 200 && (event.request.url.startsWith('http') || event.request.url.startsWith('https'))) {
+          const responseClone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseClone);
+          });
+        }
+        return response;
+      })
+      .catch(() => {
+        return caches.match(event.request).then((cachedResponse) => {
+          if (cachedResponse) {
+            return cachedResponse;
           }
-          return response;
-        }).catch(() => {
-          // If fetch fails and nothing in cache, return offline fallback
-          if (request.destination === 'document') {
-            return caches.match('/index.html');
+          if (event.request.mode === 'navigate') {
+            return caches.match('./offline.html');
           }
-          // For other assets, return a minimal valid Response instead of undefined
-          return new Response('', { status: 503, statusText: 'Service Unavailable' });
         });
       })
-    );
+  );
+});
+
+// Push notification event listener
+self.addEventListener('push', (event) => {
+  let data = { title: 'EEL Messenger', body: 'New operational dispatch message received' };
+  try {
+    if (event.data) {
+      data = event.data.json();
+    }
+  } catch (e) {
+    if (event.data) {
+      data.body = event.data.text();
+    }
   }
+
+  const options = {
+    body: data.body,
+    icon: './icon-192.png',
+    badge: './favicon.svg',
+    vibrate: [100, 50, 100],
+    data: {
+      dateOfArrival: Date.now(),
+      primaryKey: '1'
+    }
+  };
+
+  event.waitUntil(
+    self.registration.showNotification(data.title, options)
+  );
 });

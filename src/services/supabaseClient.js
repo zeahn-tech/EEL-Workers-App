@@ -8,12 +8,8 @@ const resolveCredentials = () => {
   const settings = localDb.getSettings();
   const envUrl = import.meta.env.VITE_SUPABASE_URL;
   const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-  
-  // ENV variables take priority over cached localStorage settings
-  // so a fresh deploy with new credentials actually takes effect
-  const url = envUrl || settings.supabaseUrl;
-  const key = envKey || settings.supabaseAnonKey;
-  
+  const url = settings.supabaseUrl || envUrl;
+  const key = settings.supabaseAnonKey || envKey;
   return { url, key };
 };
 
