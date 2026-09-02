@@ -341,7 +341,7 @@ export const StaffManager = () => {
             <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <UserPlus size={20} color="var(--amber-primary)" />
-                <h3 style={{ fontSize: '18px', fontWeight: 700 }}>Register New Workr</h3>
+                <h3 style={{ fontSize: '18px', fontWeight: 700 }}>Register New Worker</h3>
               </div>
               <button className="btn btn-secondary btn-icon" onClick={() => setShowAddModal(false)}>
                 <X size={18} />
@@ -387,9 +387,16 @@ export const StaffManager = () => {
                     value={formData.role}
                     onChange={e => setFormData({ ...formData, role: e.target.value })}
                   >
-                    <option value="Worker">Worker / Driver</option>
-                    <option value="Dispatcher">Logistics Dispatcher</option>
+                    <option value="Worker">Driver</option>
+                    <option value="Manager">Logistics Manager</option>
                     <option value="Admin">Executive Admin</option>
+                    <option value="Worker">Driver</option>
+                    <option value="Worker">Tally Clerk</option>
+                    <option value="Worker">Data Clerk</option>
+                    <option value="Worker">HR</option>
+                    <option value="Worker">Fuel Clerk</option>
+                    <option value="Direct">Director / CEO</option>
+                    <option value="Supervisor">General Supervisor</option>
                   </select>
                 </div>
 
