@@ -23,6 +23,42 @@ const formatDuration = (seconds) => {
   return `${m}:${r.toString().padStart(2, '0')}`;
 };
 
+// A plain `<a download>` only forces a real "save as" for same-origin URLs — browsers
+// silently ignore the `download` attribute for cross-origin ones, so a Supabase Storage
+// file link would just navigate to/open the file instead of downloading it, with no
+// indication anything different happened. Fetching the bytes and creating a local object
+// URL sidesteps that entirely and gives a genuine download regardless of where the file
+// actually lives. Same-origin base64 data URLs (local/offline mode) already download
+// correctly on their own, so this only needs to intervene for real http(s) URLs.
+const downloadAttachment = async (url, fileName) => {
+  if (!url.startsWith('http')) {
+    // data: URL (local mode) — the plain anchor `download` attribute already works here.
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName || 'file';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    return;
+  }
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = fileName || 'file';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(objectUrl);
+  } catch (err) {
+    // CORS or network issue — fall back to just opening it so the person can still save
+    // it manually, rather than the click silently doing nothing at all.
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+};
+
 // Simple custom audio player — play/pause + progress bar + duration, styled to match
 // the bubble it sits in (dark bubble vs amber "my message" bubble).
 const VoiceMessagePlayer = ({ audioData, isMe }) => {
@@ -299,9 +335,8 @@ export const MessageBubble = ({ message, isMe, onOpenLightbox, onEdit, onDelete 
                       </div>
                     </div>
 
-                    <a
-                      href={message.fileData.fileUrl}
-                      download={message.fileData.fileName}
+                    <button
+                      onClick={() => downloadAttachment(message.fileData.fileUrl, message.fileData.fileName)}
                       style={{
                         width: '32px',
                         height: '32px',
@@ -311,12 +346,14 @@ export const MessageBubble = ({ message, isMe, onOpenLightbox, onEdit, onDelete 
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        textDecoration: 'none'
+                        border: 'none',
+                        cursor: 'pointer',
+                        flexShrink: 0
                       }}
                       title="Download Attachment"
                     >
                       <Download size={16} />
-                    </a>
+                    </button>
                   </div>
                   {message.content && message.content !== `Attached File: ${message.fileData.fileName}` && (
                     <p style={{ marginTop: '8px', fontSize: '13px' }}>{message.content}</p>

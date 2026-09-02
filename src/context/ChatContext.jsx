@@ -66,7 +66,7 @@ export const ChatProvider = ({ children }) => {
 
   // Send standard text message
   const sendMessage = (text) => {
-    if (!text.trim() || !activeChat || !currentUser) return;
+    if (!text.trim() || !activeChat || !currentUser) return { success: false };
 
     const newMsg = {
       chatId: activeChat.id,
@@ -78,13 +78,22 @@ export const ChatProvider = ({ children }) => {
       timestamp: new Date().toISOString()
     };
 
-    const saved = localDb.addMessage(newMsg);
-    setMessages(prev => [...prev, saved]);
+    try {
+      const saved = localDb.addMessage(newMsg);
+      setMessages(prev => [...prev, saved]);
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
   };
 
-  // Send attachment file (File Picker)
+  // Send attachment file (File Picker). `fileData.fileUrl` may be a real Supabase Storage
+  // URL (Supabase mode — see uploadChatMedia) or a base64 data URL (local mode, where
+  // there's no server to upload to). Either way this function just persists the message;
+  // it returns { success, error } instead of assuming it always works, because the local-
+  // mode base64 path can still legitimately fail if it pushes localStorage over quota.
   const sendFileMessage = (fileData) => {
-    if (!activeChat || !currentUser) return;
+    if (!activeChat || !currentUser) return { success: false };
 
     const newMsg = {
       chatId: activeChat.id,
@@ -96,19 +105,25 @@ export const ChatProvider = ({ children }) => {
         fileName: fileData.fileName,
         fileSize: fileData.fileSize,
         fileType: fileData.fileType,
-        fileUrl: fileData.fileUrl // Base64 dataURL or blob link
+        fileUrl: fileData.fileUrl // Supabase Storage URL, or a base64 dataURL in local mode
       },
       status: 'sent',
       timestamp: new Date().toISOString()
     };
 
-    const saved = localDb.addMessage(newMsg);
-    setMessages(prev => [...prev, saved]);
+    try {
+      const saved = localDb.addMessage(newMsg);
+      setMessages(prev => [...prev, saved]);
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
   };
 
-  // Send photo/image (Image Picker)
+  // Send photo/image (Image Picker). Same shape as sendFileMessage — imageUrl may be a
+  // real Storage URL or a local-mode base64 data URL.
   const sendImageMessage = (imageData, caption = '') => {
-    if (!activeChat || !currentUser) return;
+    if (!activeChat || !currentUser) return { success: false };
 
     const newMsg = {
       chatId: activeChat.id,
@@ -125,13 +140,18 @@ export const ChatProvider = ({ children }) => {
       timestamp: new Date().toISOString()
     };
 
-    const saved = localDb.addMessage(newMsg);
-    setMessages(prev => [...prev, saved]);
+    try {
+      const saved = localDb.addMessage(newMsg);
+      setMessages(prev => [...prev, saved]);
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
   };
 
   // Send GPS location (Location Picker)
   const sendLocationMessage = (locationData) => {
-    if (!activeChat || !currentUser) return;
+    if (!activeChat || !currentUser) return { success: false };
 
     const newMsg = {
       chatId: activeChat.id,
@@ -143,19 +163,25 @@ export const ChatProvider = ({ children }) => {
         latitude: locationData.latitude,
         longitude: locationData.longitude,
         address: locationData.address,
-        accuracy: locationData.accuracy || 10
+        accuracy: locationData.accuracy ?? 10
       },
       status: 'sent',
       timestamp: new Date().toISOString()
     };
 
-    const saved = localDb.addMessage(newMsg);
-    setMessages(prev => [...prev, saved]);
+    try {
+      const saved = localDb.addMessage(newMsg);
+      setMessages(prev => [...prev, saved]);
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
   };
 
-  // Send a recorded voice note
+  // Send a recorded voice note. `audioData.audioUrl` may be a real Storage URL (Supabase
+  // mode) or a base64 data URL (local mode).
   const sendVoiceMessage = (audioData) => {
-    if (!activeChat || !currentUser) return;
+    if (!activeChat || !currentUser) return { success: false };
 
     const newMsg = {
       chatId: activeChat.id,
@@ -164,15 +190,20 @@ export const ChatProvider = ({ children }) => {
       content: 'Sent a voice message',
       type: 'voice',
       audioData: {
-        audioUrl: audioData.audioUrl, // base64 data URL
+        audioUrl: audioData.audioUrl,
         duration: audioData.duration  // seconds
       },
       status: 'sent',
       timestamp: new Date().toISOString()
     };
 
-    const saved = localDb.addMessage(newMsg);
-    setMessages(prev => [...prev, saved]);
+    try {
+      const saved = localDb.addMessage(newMsg);
+      setMessages(prev => [...prev, saved]);
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
   };
 
   // Edit your own text message

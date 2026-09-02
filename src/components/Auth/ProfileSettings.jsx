@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { resizeImageFile } from '../../services/imageUtils';
-import { X, User, Mail, Lock, Camera, Check, AlertCircle, Loader2, AlertTriangle, Trash2 } from 'lucide-react';
+import { X, User, Mail, Lock, Camera, Check, AlertCircle, Loader2, AlertTriangle, Trash2, Building2, Phone } from 'lucide-react';
 
 const Field = ({ label, children }) => (
   <div style={{ marginBottom: 16 }}>
@@ -34,6 +34,8 @@ export const ProfileSettings = ({ onClose }) => {
 
   const [name, setName] = useState(currentUser?.name || '');
   const [email, setEmail] = useState(currentUser?.email || '');
+  const [department, setDepartment] = useState(currentUser?.department || '');
+  const [phone, setPhone] = useState(currentUser?.phone || '');
   const [avatarPreview, setAvatarPreview] = useState(currentUser?.avatar || '');
   const [savingProfile, setSavingProfile] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
@@ -78,7 +80,7 @@ export const ProfileSettings = ({ onClose }) => {
     e.preventDefault();
     setProfileMsg(null);
     setSavingProfile(true);
-    const result = await updateOwnProfile({ name, email, avatar: avatarPreview });
+    const result = await updateOwnProfile({ name, email, avatar: avatarPreview, department, phone });
     setSavingProfile(false);
     if (!result.success) {
       setProfileMsg({ type: 'error', text: result.error || 'Could not save changes.' });
@@ -202,6 +204,22 @@ export const ProfileSettings = ({ onClose }) => {
                   Changing your email may require confirming it via a link sent to the new address.
                 </div>
               )}
+            </Field>
+            <Field label="Department">
+              <div style={{ position: 'relative' }}>
+                <Building2 size={15} color="var(--text-dim)" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
+                <input type="text" className="input-field" style={{ paddingLeft: 36 }}
+                  placeholder="e.g. Freeport Haulage"
+                  value={department} onChange={e => setDepartment(e.target.value)} />
+              </div>
+            </Field>
+            <Field label="Phone Number">
+              <div style={{ position: 'relative' }}>
+                <Phone size={15} color="var(--text-dim)" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
+                <input type="text" className="input-field" style={{ paddingLeft: 36 }}
+                  placeholder="+231 88 123 4567"
+                  value={phone} onChange={e => setPhone(e.target.value)} />
+              </div>
             </Field>
             <button type="submit" className="btn btn-primary" disabled={savingProfile} style={{ width: '100%', minHeight: 38 }}>
               {savingProfile ? 'Saving…' : 'Save Changes'}

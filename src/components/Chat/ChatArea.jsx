@@ -1,14 +1,26 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useChat } from '../../context/ChatContext';
-import { useVoiceRecorder } from '../../hooks/useVoiceRecorder';
+import { useVoiceRecorder, blobToDataUrl } from '../../hooks/useVoiceRecorder';
+import { uploadChatMedia } from '../../services/supabaseAuth';
 import { MessageBubble } from './MessageBubble';
 import { FilePickerModal } from './FilePickerModal';
 import { ImagePickerModal } from './ImagePickerModal';
 import { LocationShareModal } from './LocationShareModal';
 import { AttachmentMenu } from './AttachmentMenu';
 import { Lightbox } from '../UI/Lightbox';
-import { Send, Plus, Hash, Lock, Trash2, Send as SendIcon } from 'lucide-react';
+import { Send, Plus, Hash, Lock, Trash2, Send as SendIcon, X } from 'lucide-react';
+
+// Supabase mode uploads the real recording to Storage, so a full 5-minute voice note is
+// genuinely reliable — there's no meaningful ceiling below Supabase's own project limits.
+const VOICE_MAX_SECONDS_SUPABASE = 300; // 5 minutes
+
+// Local (offline) mode has no server — the recording gets embedded as base64 text
+// directly in the message, persisted to browser localStorage's few-MB total quota. A
+// typical voice recording runs roughly 200-500KB per minute depending on the browser's
+// codec choice, so this cap is set well within what reliably fits, the same reasoning
+// used for the local-mode file/image caps.
+const VOICE_MAX_SECONDS_LOCAL = 60; // 1 minute
 
 const formatDuration = (seconds) => {
   const s = Math.max(0, Math.round(seconds || 0));
@@ -18,12 +30,13 @@ const formatDuration = (seconds) => {
 };
 
 export const ChatArea = () => {
-  const { currentUser, isSuspended, isBanned } = useAuth();
+  const { currentUser, isSuspended, isBanned, supabaseMode, isUserOnline, getLastSeen } = useAuth();
   const {
     activeChat, messages, sendMessage, sendFileMessage, sendImageMessage,
     sendLocationMessage, sendVoiceMessage, editMessage, deleteMessage
   } = useChat();
-  const { isRecording, elapsedSeconds, error: recordError, startRecording, stopRecording, cancelRecording } = useVoiceRecorder();
+  const maxRecordingSeconds = supabaseMode ? VOICE_MAX_SECONDS_SUPABASE : VOICE_MAX_SECONDS_LOCAL;
+  const { isRecording, elapsedSeconds, error: recordError, startRecording, stopRecording, cancelRecording } = useVoiceRecorder(maxRecordingSeconds);
 
   const [inputText, setInputText] = useState('');
   const [attachOpen, setAttachOpen] = useState(false);
@@ -31,6 +44,8 @@ export const ChatArea = () => {
   const [imageOpen, setImageOpen] = useState(false);
   const [locationOpen, setLocationOpen] = useState(false);
   const [lightbox, setLightbox] = useState({ open: false, url: '', name: '' });
+  const [sendError, setSendError] = useState('');
+  const [isSendingVoice, setIsSendingVoice] = useState(false);
 
   const endRef = useRef(null);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
@@ -38,7 +53,12 @@ export const ChatArea = () => {
   const handleSend = (e) => {
     e.preventDefault();
     if (!inputText.trim() || isSuspended || isBanned) return;
-    sendMessage(inputText);
+    const result = sendMessage(inputText);
+    if (result && !result.success && result.error) {
+      setSendError(result.error);
+      return; // keep the typed text so nothing is lost
+    }
+    setSendError('');
     setInputText('');
   };
 
@@ -49,7 +69,54 @@ export const ChatArea = () => {
 
   const handleStopAndSend = async () => {
     const result = await stopRecording();
-    if (result) sendVoiceMessage(result);
+    if (!result) return;
+
+    setIsSendingVoice(true);
+    setSendError('');
+
+    let audioUrl;
+    if (supabaseMode) {
+      // Upload the real recording to Storage — the message only ever holds the resulting
+      // URL, which is what makes a full 5-minute voice note actually reliable to send.
+      const ext = result.mimeType.includes('mp4') ? 'm4a' : 'webm';
+      const file = new File([result.blob], `voice-note-${Date.now()}.${ext}`, { type: result.mimeType });
+      const uploadResult = await uploadChatMedia(activeChat?.id || 'general', file);
+      if (!uploadResult.success) {
+        setSendError(uploadResult.error || 'Voice note upload failed. Please try again.');
+        setIsSendingVoice(false);
+        return;
+      }
+      audioUrl = uploadResult.url;
+    } else {
+      // Local mode: no server to upload to, so the recording is embedded as base64 —
+      // kept within reach of localStorage's quota by the shorter local-mode duration cap.
+      try {
+        audioUrl = await blobToDataUrl(result.blob);
+      } catch (err) {
+        setSendError(err.message || 'Could not process the recording.');
+        setIsSendingVoice(false);
+        return;
+      }
+    }
+
+    const sendResult = sendVoiceMessage({ audioUrl, duration: result.duration });
+    if (sendResult && !sendResult.success && sendResult.error) setSendError(sendResult.error);
+    setIsSendingVoice(false);
+  };
+
+  const handleSendFile = (fileData) => {
+    const result = sendFileMessage(fileData);
+    if (result && !result.success && result.error) setSendError(result.error);
+  };
+
+  const handleSendImage = (imageData, caption) => {
+    const result = sendImageMessage(imageData, caption);
+    if (result && !result.success && result.error) setSendError(result.error);
+  };
+
+  const handleSendLocation = (locationData) => {
+    const result = sendLocationMessage(locationData);
+    if (result && !result.success && result.error) setSendError(result.error);
   };
 
   return (
@@ -76,7 +143,13 @@ export const ChatArea = () => {
             <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
               {activeChat.isGroup
                 ? `Group Channel · ${activeChat.members?.length || 0} members`
-                : `${activeChat.department || 'Direct Message'} · ${activeChat.online ? '🟢 Online' : '⚫ Offline'}`}
+                : (() => {
+                    const online = isUserOnline(activeChat.id);
+                    const lastSeen = !online && getLastSeen(activeChat.id);
+                    return `${activeChat.department || 'Direct Message'} · ${
+                      online ? '🟢 Online' : lastSeen ? `⚫ Last seen ${lastSeen}` : '⚫ Offline'
+                    }`;
+                  })()}
             </div>
           </div>
         </div>
@@ -121,27 +194,32 @@ export const ChatArea = () => {
           <Lock size={16} />
           {isBanned ? 'Account BANNED. Messaging locked.' : 'Account SUSPENDED. Contact Admin.'}
         </div>
-      ) : isRecording ? (
+      ) : isRecording || isSendingVoice ? (
         /* RECORDING IN PROGRESS BAR */
         <div className="glass-panel" style={{
           padding: '10px 16px', borderTop: '1px solid var(--border-subtle)',
           display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0
         }}>
           <div style={{
-            width: 10, height: 10, borderRadius: '50%', background: '#EF4444',
+            width: 10, height: 10, borderRadius: '50%', background: isSendingVoice ? 'var(--amber-primary)' : '#EF4444',
             animation: 'pulseGlow 1s infinite ease-in-out', flexShrink: 0
           }} />
           <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-main)', flexShrink: 0 }}>
-            Recording… {formatDuration(elapsedSeconds)}
+            {isSendingVoice ? 'Uploading voice note…' : `Recording… ${formatDuration(elapsedSeconds)}`}
           </span>
-          <span style={{ fontSize: 11, color: 'var(--text-dim)', flex: 1 }}>Max 2 minutes</span>
-          <button onClick={cancelRecording} className="btn btn-secondary btn-icon"
+          {!isSendingVoice && (
+            <span style={{ fontSize: 11, color: 'var(--text-dim)', flex: 1 }}>
+              Max {maxRecordingSeconds >= 60 ? `${Math.round(maxRecordingSeconds / 60)} min` : `${maxRecordingSeconds}s`}
+              {!supabaseMode && ' (offline mode)'}
+            </span>
+          )}
+          <button onClick={cancelRecording} className="btn btn-secondary btn-icon" disabled={isSendingVoice}
             title="Cancel recording" style={{ width: 36, height: 36, minHeight: 36, flexShrink: 0 }}>
             <Trash2 size={16} color="#FCA5A5" />
           </button>
-          <button onClick={handleStopAndSend} className="btn btn-primary"
+          <button onClick={handleStopAndSend} className="btn btn-primary" disabled={isSendingVoice || !isRecording}
             title="Send voice note" style={{ minHeight: 36, flexShrink: 0 }}>
-            <SendIcon size={15} /> <span className="mobile-hide">Send</span>
+            <SendIcon size={15} /> <span className="mobile-hide">{isSendingVoice ? 'Sending…' : 'Send'}</span>
           </button>
         </div>
       ) : (
@@ -173,12 +251,18 @@ export const ChatArea = () => {
         </div>
       )}
 
-      {recordError && (
+      {(sendError || recordError) && (
         <div style={{
           padding: '8px 16px', flexShrink: 0, background: 'rgba(239,68,68,0.15)',
-          borderTop: '1px solid rgba(239,68,68,0.4)', color: '#FCA5A5', fontSize: 12
+          borderTop: '1px solid rgba(239,68,68,0.4)', color: '#FCA5A5', fontSize: 12,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10
         }}>
-          {recordError}
+          <span>{sendError || recordError}</span>
+          {sendError && (
+            <button onClick={() => setSendError('')} style={{ background: 'none', border: 'none', color: '#FCA5A5', cursor: 'pointer', flexShrink: 0 }}>
+              <X size={14} />
+            </button>
+          )}
         </div>
       )}
 
@@ -192,9 +276,11 @@ export const ChatArea = () => {
         onVoice={handleMicClick}
         voiceDisabled={!activeChat}
       />
-      <FilePickerModal isOpen={fileOpen} onClose={() => setFileOpen(false)} onSendFile={sendFileMessage} />
-      <ImagePickerModal isOpen={imageOpen} onClose={() => setImageOpen(false)} onSendImage={sendImageMessage} />
-      <LocationShareModal isOpen={locationOpen} onClose={() => setLocationOpen(false)} onSendLocation={sendLocationMessage} />
+      <FilePickerModal isOpen={fileOpen} onClose={() => setFileOpen(false)} onSendFile={handleSendFile}
+        chatId={activeChat?.id} supabaseMode={supabaseMode} />
+      <ImagePickerModal isOpen={imageOpen} onClose={() => setImageOpen(false)} onSendImage={handleSendImage}
+        chatId={activeChat?.id} supabaseMode={supabaseMode} />
+      <LocationShareModal isOpen={locationOpen} onClose={() => setLocationOpen(false)} onSendLocation={handleSendLocation} />
       {lightbox.open && <Lightbox imageUrl={lightbox.url} fileName={lightbox.name} onClose={() => setLightbox({ open: false, url: '', name: '' })} />}
     </div>
   );

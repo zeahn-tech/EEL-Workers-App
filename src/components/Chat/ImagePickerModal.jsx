@@ -1,26 +1,46 @@
 import React, { useState, useRef } from 'react';
 import { X, Image as ImageIcon, UploadCloud, AlertCircle } from 'lucide-react';
+import { uploadChatMedia } from '../../services/supabaseAuth';
 
-export const ImagePickerModal = ({ isOpen, onClose, onSendImage }) => {
+// Supabase mode uploads the real image file to Storage, so this is a genuine, working cap.
+const SUPABASE_MAX_BYTES = 15 * 1024 * 1024; // 15MB
+
+// Local mode embeds the image as base64 directly in the message, persisted to browser
+// localStorage — which has a hard quota of only a few MB total across everything this app
+// stores. This lower cap is what actually fits reliably, not an arbitrary restriction.
+const LOCAL_MAX_BYTES = 2 * 1024 * 1024; // 2MB
+
+export const ImagePickerModal = ({ isOpen, onClose, onSendImage, chatId, supabaseMode }) => {
   const [selectedImage, setSelectedImage] = useState(null);
   const [previewUrl, setPreviewUrl] = useState('');
   const [caption, setCaption] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
   const imageInputRef = useRef(null);
 
   if (!isOpen) return null;
+
+  const maxBytes = supabaseMode ? SUPABASE_MAX_BYTES : LOCAL_MAX_BYTES;
+  const maxLabel = supabaseMode ? '15MB' : '2MB (local/offline mode)';
 
   const handleImageChange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
+    // Accepts every image MIME type the browser reports (PNG, JPG, WEBP, GIF, HEIC, SVG,
+    // BMP, TIFF, AVIF...) — nothing narrower than "starts with image/", so no legitimate
+    // photo format gets rejected just because it isn't one of a hardcoded few.
     if (!file.type.startsWith('image/')) {
-      setErrorMsg('Please select a valid image file (PNG, JPG, WEBP, GIF).');
+      setErrorMsg('Please select an image file.');
       return;
     }
 
-    if (file.size > 15 * 1024 * 1024) {
-      setErrorMsg('Image size exceeds maximum limit of 15MB.');
+    if (file.size > maxBytes) {
+      setErrorMsg(
+        supabaseMode
+          ? `Image size exceeds the maximum limit of ${maxLabel}.`
+          : `Image size exceeds the ${maxLabel} limit for offline mode. Switch to Supabase mode in Admin Settings for uploads up to 15MB.`
+      );
       return;
     }
 
@@ -28,21 +48,35 @@ export const ImagePickerModal = ({ isOpen, onClose, onSendImage }) => {
     setSelectedImage(file);
 
     const reader = new FileReader();
-    reader.onload = (event) => {
-      setPreviewUrl(event.target.result);
-    };
-    reader.readAsDataURL(file);
+    reader.onload = (event) => setPreviewUrl(event.target.result);
+    reader.readAsDataURL(file); // local preview only — doesn't decide how it's actually sent
   };
 
-  const handleSubmit = () => {
-    if (!previewUrl) return;
+  const handleSubmit = async () => {
+    if (!selectedImage) return;
+    setIsUploading(true);
+    setErrorMsg('');
 
-    onSendImage({
-      imageUrl: previewUrl,
-      fileName: selectedImage ? selectedImage.name : 'photo.jpg'
-    }, caption);
+    if (supabaseMode) {
+      const result = await uploadChatMedia(chatId || 'general', selectedImage);
+      setIsUploading(false);
+      if (!result.success) {
+        setErrorMsg(result.error || 'Upload failed. Please try again.');
+        return;
+      }
+      onSendImage({ imageUrl: result.url, fileName: selectedImage.name }, caption);
+      resetAndClose();
+      return;
+    }
 
-    // Reset modal state
+    // Local mode: previewUrl is already the base64 data URL from handleImageChange —
+    // that's what gets sent since there's no server to upload the real file to.
+    onSendImage({ imageUrl: previewUrl, fileName: selectedImage.name }, caption);
+    setIsUploading(false);
+    resetAndClose();
+  };
+
+  const resetAndClose = () => {
     setSelectedImage(null);
     setPreviewUrl('');
     setCaption('');
@@ -66,7 +100,7 @@ export const ImagePickerModal = ({ isOpen, onClose, onSendImage }) => {
         {/* Content Body */}
         <div style={{ padding: '20px' }}>
           {!previewUrl ? (
-            <div 
+            <div
               onClick={() => imageInputRef.current?.click()}
               style={{
                 border: '2px dashed var(--border-amber)',
@@ -77,19 +111,19 @@ export const ImagePickerModal = ({ isOpen, onClose, onSendImage }) => {
                 background: 'rgba(15, 23, 42, 0.4)'
               }}
             >
-              <input 
-                type="file" 
-                ref={imageInputRef} 
-                accept="image/*" 
-                onChange={handleImageChange} 
-                style={{ display: 'none' }} 
+              <input
+                type="file"
+                ref={imageInputRef}
+                accept="image/*"
+                onChange={handleImageChange}
+                style={{ display: 'none' }}
               />
               <UploadCloud size={44} color="var(--amber-primary)" style={{ margin: '0 auto 12px' }} />
               <p style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-main)', marginBottom: '4px' }}>
                 Select Cargo or Dispatch Photo
               </p>
               <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                PNG, JPG, WEBP or GIF (Max 15MB)
+                Any image format · Max {maxLabel}
               </p>
             </div>
           ) : (
@@ -105,12 +139,12 @@ export const ImagePickerModal = ({ isOpen, onClose, onSendImage }) => {
                 alignItems: 'center',
                 justifyContent: 'center'
               }}>
-                <img 
-                  src={previewUrl} 
-                  alt="Preview" 
-                  style={{ maxHeight: '250px', width: '100%', objectFit: 'contain' }} 
+                <img
+                  src={previewUrl}
+                  alt="Preview"
+                  style={{ maxHeight: '250px', width: '100%', objectFit: 'contain' }}
                 />
-                <button 
+                <button
                   onClick={() => {
                     setPreviewUrl('');
                     setSelectedImage(null);
@@ -134,10 +168,10 @@ export const ImagePickerModal = ({ isOpen, onClose, onSendImage }) => {
                 <label style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'block', marginBottom: '6px', fontWeight: 600 }}>
                   Photo Caption / Dispatch Notes (Optional)
                 </label>
-                <input 
-                  type="text" 
-                  className="input-field" 
-                  placeholder="e.g. Container bill of lading inspection completed at gate 4..." 
+                <input
+                  type="text"
+                  className="input-field"
+                  placeholder="e.g. Container bill of lading inspection completed at gate 4..."
                   value={caption}
                   onChange={e => setCaption(e.target.value)}
                 />
@@ -155,11 +189,11 @@ export const ImagePickerModal = ({ isOpen, onClose, onSendImage }) => {
 
         {/* Footer */}
         <div style={{ padding: '16px 20px', borderTop: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-          <button className="btn btn-secondary" onClick={onClose}>
+          <button className="btn btn-secondary" onClick={onClose} disabled={isUploading}>
             Cancel
           </button>
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={!previewUrl}>
-            Send Image
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={!previewUrl || isUploading}>
+            {isUploading ? 'Uploading…' : 'Send Image'}
           </button>
         </div>
       </div>

@@ -4,7 +4,7 @@ import { useChat } from '../../context/ChatContext';
 import { Search, Plus, Hash, User, Settings, AlertTriangle } from 'lucide-react';
 
 export const ChatSidebar = ({ onOpenGroupCreator, onSelectChat, onOpenAdmin, onOpenProfile }) => {
-  const { users, currentUser, isAdmin, supabaseMode, refreshUsers } = useAuth();
+  const { users, currentUser, isAdmin, supabaseMode, refreshUsers, isUserOnline, getLastSeen } = useAuth();
   const { groups, activeChat, setActiveChat, searchQuery, setSearchQuery } = useChat();
   const [retrying, setRetrying] = useState(false);
 
@@ -125,7 +125,7 @@ export const ChatSidebar = ({ onOpenGroupCreator, onSelectChat, onOpenAdmin, onO
                 {u.status === 'Active' && (
                   <div style={{
                     width: 9, height: 9, borderRadius: '50%',
-                    background: u.online ? '#10B981' : 'var(--text-dim)',
+                    background: isUserOnline(u.id) ? '#10B981' : 'var(--text-dim)',
                     border: '2px solid var(--bg-secondary)',
                     position: 'absolute', bottom: 0, right: 0
                   }} />
@@ -143,7 +143,7 @@ export const ChatSidebar = ({ onOpenGroupCreator, onSelectChat, onOpenAdmin, onO
                   )}
                 </div>
                 <div style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {u.department}
+                  {u.department}{!isUserOnline(u.id) && getLastSeen(u.id) ? ` · ${getLastSeen(u.id)}` : ''}
                 </div>
               </div>
             </button>

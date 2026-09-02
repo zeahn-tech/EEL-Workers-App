@@ -42,8 +42,11 @@ const toAppUser = (profile) => ({
   avatar: profile.avatar || '',
   initials: (profile.name || '?').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase(),
   phone: profile.phone || '',
-  online: true,
-  lastSeen: 'Just now'
+  // Real online/offline status is never a static profile field — it's computed live from
+  // presence (see services/presence.js) and looked up separately wherever it's displayed.
+  // `lastSeen` here is the last known real timestamp from the database (updated by the
+  // presence heartbeat while this person's session is open), not a placeholder string.
+  lastSeen: profile.last_seen || null
 });
 
 export const fetchProfile = async (userId) => {
@@ -298,6 +301,32 @@ export const uploadAvatarImage = async (userId, blob, contentType) => {
   const { data } = supabase.storage.from('avatars').getPublicUrl(path);
   // Cache-bust so the new photo shows immediately instead of a stale cached version.
   return { success: true, url: `${data.publicUrl}?t=${Date.now()}` };
+};
+
+// Uploads a chat attachment (any file type, or an image) to the shared `chat-media`
+// bucket and returns its public URL. This is what actually makes large attachments work:
+// storing the file itself in Supabase Storage means the chat message only ever needs to
+// hold a short URL string, instead of the entire file re-encoded as a base64 data URL
+// stuffed into the message record. That distinction matters a lot in practice — messages
+// are persisted to browser localStorage regardless of mode (see the architecture note in
+// supabaseClient.js), and localStorage has a hard per-origin quota of only a few MB total
+// across every key this app uses. A single multi-MB base64 image can exceed that quota by
+// itself, and `localStorage.setItem` throws when it does — silently breaking the send with
+// no explanation, which is exactly the "some files/images just don't upload" symptom this
+// fixes. Routing real uploads through Storage instead sidesteps that ceiling entirely.
+export const uploadChatMedia = async (chatId, file) => {
+  const supabase = getSupabaseClient();
+  const safeName = file.name.replace(/[^a-zA-Z0-9_.-]/g, '_');
+  const path = `${chatId}/${Date.now()}-${safeName}`;
+  const { error: uploadError } = await supabase.storage.from('chat-media').upload(path, file, {
+    cacheControl: '3600',
+    contentType: file.type || 'application/octet-stream'
+  });
+  if (uploadError) {
+    return { success: false, error: `${uploadError.message} (does the "chat-media" Storage bucket exist with the right policies?)` };
+  }
+  const { data } = supabase.storage.from('chat-media').getPublicUrl(path);
+  return { success: true, url: data.publicUrl };
 };
 
 export const updateProfileStatus = async (userId, status) => {

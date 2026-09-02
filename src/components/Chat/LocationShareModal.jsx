@@ -1,5 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { X, MapPin, Navigation, Compass, AlertCircle, RefreshCw } from 'lucide-react';
+import { X, MapPin, Navigation, Compass, AlertCircle, RefreshCw, ShieldAlert } from 'lucide-react';
+
+// Maps a browser GeolocationPositionError code to a specific, honest explanation. There is
+// deliberately no fallback coordinate anywhere in this file — if the browser can't produce
+// a real GPS fix, the person sees exactly why and can retry, but nothing gets sent. Silently
+// substituting a placeholder location (this component used to default to a fixed Monrovia
+// Freeport coordinate) would mean a dispatcher could believe a worker is somewhere they
+// aren't, which is worse than sharing nothing at all.
+const describeGeoError = (err) => {
+  switch (err.code) {
+    case err.PERMISSION_DENIED:
+      return 'Location permission was denied. Enable location access for this site in your browser or device settings, then try again.';
+    case err.POSITION_UNAVAILABLE:
+      return "Your device couldn't determine its location right now. Make sure GPS / location services are turned on, then try again.";
+    case err.TIMEOUT:
+      return 'Getting a GPS fix took too long. Try again — a clear view of the sky or a stronger signal usually helps.';
+    default:
+      return 'Could not get your location. Please try again.';
+  }
+};
 
 export const LocationShareModal = ({ isOpen, onClose, onSendLocation }) => {
   const [coords, setCoords] = useState(null);
@@ -7,28 +26,27 @@ export const LocationShareModal = ({ isOpen, onClose, onSendLocation }) => {
   const [loadingLoc, setLoadingLoc] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  // Default Freeport Monrovia GPS fallback if geolocation permission is denied
-  const DEFAULT_MONROVIA_LOCATION = {
-    latitude: 6.3156,
-    longitude: -10.8074,
-    address: 'Monrovia Freeport Port Terminal, Bushrod Island, Liberia',
-    accuracy: 15
-  };
-
   useEffect(() => {
     if (isOpen && !coords) {
       fetchCurrentLocation();
     }
+    // Reset everything when the modal closes, so reopening it always requests a fresh,
+    // current fix rather than silently reusing a potentially stale/old one from earlier.
+    if (!isOpen) {
+      setCoords(null);
+      setAddress('');
+      setErrorMsg('');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
   const fetchCurrentLocation = () => {
     setLoadingLoc(true);
     setErrorMsg('');
+    setCoords(null);
 
     if (!navigator.geolocation) {
-      setErrorMsg('Geolocation is not supported by your browser. Using Monrovia Freeport depot coordinates.');
-      setCoords(DEFAULT_MONROVIA_LOCATION);
-      setAddress(DEFAULT_MONROVIA_LOCATION.address);
+      setErrorMsg('Geolocation is not supported by this browser, so a real location cannot be shared here.');
       setLoadingLoc(false);
       return;
     }
@@ -37,48 +55,41 @@ export const LocationShareModal = ({ isOpen, onClose, onSendLocation }) => {
       (position) => {
         const lat = position.coords.latitude;
         const lng = position.coords.longitude;
-        const accuracy = Math.round(position.coords.accuracy || 10);
+        const accuracy = Math.round(position.coords.accuracy || 0);
 
-        setCoords({
-          latitude: lat,
-          longitude: lng,
-          accuracy
-        });
+        setCoords({ latitude: lat, longitude: lng, accuracy });
 
-        // Reverse geocoding lookup via OpenStreetMap Nominatim
+        // Reverse geocoding is purely cosmetic (a human-readable label) — if it fails or is
+        // slow, the real coordinates above are already set and shareable regardless.
         fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`)
           .then(res => res.json())
           .then(data => {
-            if (data && data.display_name) {
-              setAddress(data.display_name);
-            } else {
-              setAddress(`GPS Pinpoint (${lat.toFixed(4)}°, ${lng.toFixed(4)}°)`);
-            }
+            setAddress(data?.display_name || `GPS Pinpoint (${lat.toFixed(5)}°, ${lng.toFixed(5)}°)`);
           })
           .catch(() => {
-            setAddress(`GPS Dispatch Pinpoint (${lat.toFixed(4)}°, ${lng.toFixed(4)}°)`);
+            setAddress(`GPS Pinpoint (${lat.toFixed(5)}°, ${lng.toFixed(5)}°)`);
           })
           .finally(() => setLoadingLoc(false));
       },
       (err) => {
-        console.warn('Geolocation warning:', err.message);
-        setErrorMsg('Location permission restricted. Using EEL Monrovia Freeport Terminal default location.');
-        setCoords(DEFAULT_MONROVIA_LOCATION);
-        setAddress(DEFAULT_MONROVIA_LOCATION.address);
+        console.warn('Geolocation error:', err.code, err.message);
+        setErrorMsg(describeGeoError(err));
         setLoadingLoc(false);
       },
-      { enableHighAccuracy: true, timeout: 10000 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
   };
 
   const handleSubmit = () => {
+    // No coords means no real fix was ever obtained — there is nothing to fall back to,
+    // by design, so this is the only way to guarantee every shared location is genuine.
     if (!coords) return;
 
     onSendLocation({
       latitude: coords.latitude,
       longitude: coords.longitude,
-      accuracy: coords.accuracy || 10,
-      address: address.trim() || `GPS Coordinates (${coords.latitude.toFixed(4)}, ${coords.longitude.toFixed(4)})`
+      accuracy: coords.accuracy || 0,
+      address: address.trim() || `GPS Coordinates (${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)})`
     });
 
     onClose();
@@ -102,15 +113,36 @@ export const LocationShareModal = ({ isOpen, onClose, onSendLocation }) => {
 
         {/* Location Content */}
         <div style={{ padding: '20px' }}>
-          {loadingLoc ? (
+          {loadingLoc && (
             <div style={{ textAlign: 'center', padding: '40px 20px' }}>
               <RefreshCw size={36} color="var(--amber-primary)" className="glow-amber" style={{ animation: 'spin 1s linear infinite', margin: '0 auto 16px' }} />
-              <p style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-main)' }}>Acquiring High-Precision GPS Coordinates...</p>
+              <p style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-main)' }}>Acquiring your real GPS coordinates…</p>
               <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>Communicating with device location sensors</p>
             </div>
-          ) : (
+          )}
+
+          {!loadingLoc && !coords && (
+            <div style={{ textAlign: 'center', padding: '32px 20px' }}>
+              <ShieldAlert size={36} color="#F59E0B" style={{ margin: '0 auto 16px' }} />
+              <p style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-main)', marginBottom: 6 }}>
+                No location acquired
+              </p>
+              {errorMsg && (
+                <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: 16, maxWidth: 320, marginLeft: 'auto', marginRight: 'auto' }}>
+                  {errorMsg}
+                </p>
+              )}
+              <button className="btn btn-primary" onClick={fetchCurrentLocation}>
+                <RefreshCw size={14} />
+                Try Again
+              </button>
+            </div>
+          )}
+
+          {!loadingLoc && coords && (
             <div>
-              {/* Map Preview Iframe Embed */}
+              {/* Map Preview Iframe Embed — only ever rendered once we have a REAL fix, so
+                  this can never display a placeholder location as if it were live. */}
               <div style={{
                 height: '200px',
                 borderRadius: 'var(--radius-md)',
@@ -125,7 +157,7 @@ export const LocationShareModal = ({ isOpen, onClose, onSendLocation }) => {
                   height="100%"
                   frameBorder="0"
                   scrolling="no"
-                  src={`https://www.openstreetmap.org/export/embed.html?bbox=${(coords?.longitude || -10.8074) - 0.01}%2C${(coords?.latitude || 6.3156) - 0.01}%2C${(coords?.longitude || -10.8074) + 0.01}%2C${(coords?.latitude || 6.3156) + 0.01}&layer=mapnik&marker=${coords?.latitude || 6.3156}%2C${coords?.longitude || -10.8074}`}
+                  src={`https://www.openstreetmap.org/export/embed.html?bbox=${coords.longitude - 0.01}%2C${coords.latitude - 0.01}%2C${coords.longitude + 0.01}%2C${coords.latitude + 0.01}&layer=mapnik&marker=${coords.latitude}%2C${coords.longitude}`}
                 />
               </div>
 
@@ -149,10 +181,10 @@ export const LocationShareModal = ({ isOpen, onClose, onSendLocation }) => {
                 </div>
 
                 <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-main)', marginBottom: '4px' }}>
-                  Lat: {coords?.latitude.toFixed(6)}°, Lng: {coords?.longitude.toFixed(6)}°
+                  Lat: {coords.latitude.toFixed(6)}°, Lng: {coords.longitude.toFixed(6)}°
                 </div>
                 <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                  Precision Radius: ~{coords?.accuracy || 10} meters
+                  Precision Radius: ~{coords.accuracy || 'unknown'} meters
                 </div>
               </div>
 
@@ -168,14 +200,11 @@ export const LocationShareModal = ({ isOpen, onClose, onSendLocation }) => {
                   onChange={e => setAddress(e.target.value)}
                   placeholder="e.g. EEL Freeport Container Yard #2..."
                 />
+                <p style={{ fontSize: '10px', color: 'var(--text-dim)', marginTop: 4 }}>
+                  This label is just a note for readability — the coordinates above are what
+                  actually gets shared, and they're your device's real current GPS fix.
+                </p>
               </div>
-
-              {errorMsg && (
-                <div style={{ marginTop: '12px', color: '#F59E0B', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <AlertCircle size={14} />
-                  <span>{errorMsg}</span>
-                </div>
-              )}
             </div>
           )}
         </div>

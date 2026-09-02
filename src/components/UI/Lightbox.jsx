@@ -4,13 +4,35 @@ import { X, Download } from 'lucide-react';
 export const Lightbox = ({ imageUrl, fileName, onClose }) => {
   if (!imageUrl) return null;
 
-  const handleDownload = () => {
-    const a = document.createElement('a');
-    a.href = imageUrl;
-    a.download = fileName || 'eel-dispatch-photo.jpg';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+  // Same reasoning as MessageBubble's downloadAttachment: a plain <a download> silently
+  // stops forcing a real download for cross-origin URLs (a Supabase Storage image link),
+  // so this fetches the bytes locally first. Local-mode base64 data URLs already download
+  // fine on their own and take the fast path.
+  const handleDownload = async () => {
+    const targetFileName = fileName || 'eel-dispatch-photo.jpg';
+    if (!imageUrl.startsWith('http')) {
+      const a = document.createElement('a');
+      a.href = imageUrl;
+      a.download = targetFileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      return;
+    }
+    try {
+      const response = await fetch(imageUrl);
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = targetFileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(objectUrl);
+    } catch (err) {
+      window.open(imageUrl, '_blank', 'noopener,noreferrer');
+    }
   };
 
   return (

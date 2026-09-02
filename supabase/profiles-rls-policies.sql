@@ -27,6 +27,12 @@
 
 alter table public.profiles enable row level security;
 
+-- Real online/offline presence (see services/presence.js) needs somewhere durable to
+-- record when a Supabase-mode user was last seen, so offline staff show a genuine "last
+-- seen" time instead of nothing at all once their live presence session ends. Safe to
+-- run even if this column already exists.
+alter table public.profiles add column if not exists last_seen timestamptz;
+
 drop policy if exists "Profiles are viewable by authenticated users" on public.profiles;
 drop policy if exists "Users can insert their own profile" on public.profiles;
 drop policy if exists "Users can update their own profile" on public.profiles;
@@ -238,6 +244,35 @@ create policy "Users can update their own avatar"
   on storage.objects for update
   to authenticated
   using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- ---------------------------------------------------------------------------
+-- Storage bucket for chat attachments (files + images sent in messages). Create
+-- the bucket first via Dashboard → Storage → New bucket → name it "chat-media"
+-- and mark it Public, THEN run the policies below. Without this bucket, file
+-- and image attachments fall back to storing the entire file as base64 text
+-- directly in the message — which works for small files, but silently fails
+-- for anything of real size once it pushes the browser's localStorage quota
+-- over its limit (a few MB total, shared across this whole app). This bucket
+-- is what lets attachments be actually large (tens of MB) and reliable.
+--
+-- Any authenticated user can upload and any authenticated user can read —
+-- deliberately as open as the profiles directory itself, matching how this is
+-- an internal company chat where every signed-in staff member is a trusted
+-- participant, not a public-facing app with untrusted visitors.
+-- ---------------------------------------------------------------------------
+
+drop policy if exists "Chat media is readable by authenticated users" on storage.objects;
+drop policy if exists "Authenticated users can upload chat media" on storage.objects;
+
+create policy "Chat media is readable by authenticated users"
+  on storage.objects for select
+  to authenticated
+  using (bucket_id = 'chat-media');
+
+create policy "Authenticated users can upload chat media"
+  on storage.objects for insert
+  to authenticated
+  with check (bucket_id = 'chat-media');
 
 -- ---------------------------------------------------------------------------
 -- ONE-TIME MANUAL STEP — only needed if your profiles table already has rows

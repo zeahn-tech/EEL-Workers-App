@@ -27,8 +27,6 @@ export const DEFAULT_WORKERS = [
     avatar: '',
     initials: 'JK',
     phone: '+231 88 654 3210',
-    online: true,
-    lastSeen: 'Just now',
     passwordHash: '6a755590bb466584a1bbf37bb556cb21a6e3abfac80558240be7293bad937181'
   },
   {
@@ -41,8 +39,6 @@ export const DEFAULT_WORKERS = [
     avatar: '',
     initials: 'SF',
     phone: '+231 77 123 4567',
-    online: true,
-    lastSeen: 'Just now',
     passwordHash: 'cbf6e05b87526ebb762e28d7c278d3e7af32c38ba9ddffc74604b7fd491804ea'
   },
   {
@@ -55,8 +51,6 @@ export const DEFAULT_WORKERS = [
     avatar: '',
     initials: 'EZ',
     phone: '+231 88 999 1111',
-    online: true,
-    lastSeen: '5m ago',
     passwordHash: 'a25143d32ff302a81dacd810d845ece211a9e4f9f7eb72823a4a50749adcc558'
   },
   {
@@ -69,8 +63,6 @@ export const DEFAULT_WORKERS = [
     avatar: '',
     initials: 'MT',
     phone: '+231 77 888 2222',
-    online: false,
-    lastSeen: '20m ago',
     passwordHash: '71c434a6d03d661c53b3db82a9e4980428b535f954a0326c95732908d17240a2'
   },
   {
@@ -83,8 +75,6 @@ export const DEFAULT_WORKERS = [
     avatar: '',
     initials: 'CS',
     phone: '+231 88 555 4433',
-    online: true,
-    lastSeen: 'Just now',
     passwordHash: '4dec4e3257f819d09fd8395e061e14684c1ab2c5a2fd99906890bc017208e20e'
   }
 ];
@@ -233,7 +223,22 @@ export const localDb = {
       timestamp: message.timestamp || new Date().toISOString()
     };
     messages.push(newMsg);
-    localStorage.setItem(STORAGE_KEYS.MESSAGES, JSON.stringify(messages));
+    try {
+      localStorage.setItem(STORAGE_KEYS.MESSAGES, JSON.stringify(messages));
+    } catch (err) {
+      // Local (offline) mode has no server to actually store attachments — files and
+      // images are embedded directly as base64 text in the message, and localStorage has
+      // a hard per-origin quota of only a few MB total across everything this app stores.
+      // Without this catch, a QuotaExceededError here would throw uncaught, silently
+      // discarding the message with no explanation — exactly the "some attachments just
+      // don't send" symptom this is fixing. Throwing a clear, typed error instead lets the
+      // UI show something actionable rather than nothing.
+      const quotaError = new Error(
+        'Local storage is full — this attachment is too large for offline mode. Try a smaller file, or switch to Supabase mode in Admin Settings for full-size uploads.'
+      );
+      quotaError.isQuotaError = true;
+      throw quotaError;
+    }
     if (broadcastChannel) {
       broadcastChannel.postMessage({ type: 'NEW_MESSAGE', message: newMsg });
     }
@@ -248,7 +253,15 @@ export const localDb = {
       updatedMsg = { ...m, ...updates };
       return updatedMsg;
     });
-    localStorage.setItem(STORAGE_KEYS.MESSAGES, JSON.stringify(next));
+    try {
+      localStorage.setItem(STORAGE_KEYS.MESSAGES, JSON.stringify(next));
+    } catch (err) {
+      const quotaError = new Error(
+        'Local storage is full — could not save this change. Try removing some older attachments, or switch to Supabase mode in Admin Settings.'
+      );
+      quotaError.isQuotaError = true;
+      throw quotaError;
+    }
     if (broadcastChannel && updatedMsg) {
       broadcastChannel.postMessage({ type: 'MESSAGE_UPDATED', message: updatedMsg });
     }

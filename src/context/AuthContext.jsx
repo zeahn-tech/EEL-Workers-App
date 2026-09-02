@@ -3,6 +3,7 @@ import { localDb } from '../services/localDb';
 import { isSupabaseConfigured, getSupabaseClient } from '../services/supabaseClient';
 import { hashPassword, verifyPassword, generateTempPassword } from '../services/authCrypto';
 import * as supaAuth from '../services/supabaseAuth';
+import { subscribeToPresence, formatLastSeen } from '../services/presence';
 
 const AuthContext = createContext();
 
@@ -84,6 +85,44 @@ export const AuthProvider = ({ children }) => {
     init();
     return () => { unsubscribeProfiles(); unsubscribeAuthState(); };
   }, [supabaseMode]);
+
+  // Real presence: subscribe once we know who's signed in, and re-subscribe if the
+  // signed-in account changes (e.g. logout then a different login in the same tab).
+  // `onlineUserIds` is the live set of who's actually connected right now — nobody is
+  // ever added to it except by their own client actively announcing it (see
+  // services/presence.js). `presenceHeartbeats` is local-mode-only raw heartbeat data,
+  // used to compute "last seen" for local-mode users the same way Supabase mode uses the
+  // profiles.last_seen column.
+  const [onlineUserIds, setOnlineUserIds] = useState(new Set());
+  const [presenceHeartbeats, setPresenceHeartbeats] = useState({});
+
+  useEffect(() => {
+    if (!currentUser) {
+      setOnlineUserIds(new Set());
+      return;
+    }
+    const unsubscribePresence = subscribeToPresence(currentUser, supabaseMode, (ids, heartbeats) => {
+      setOnlineUserIds(ids);
+      if (heartbeats) setPresenceHeartbeats(heartbeats);
+    });
+    return unsubscribePresence;
+  }, [currentUser?.id, supabaseMode]);
+
+  // Is this specific user currently online? Always a live lookup, never a stored field —
+  // presence changes constantly and a cached boolean would go stale immediately.
+  const isUserOnline = (userId) => onlineUserIds.has(userId);
+
+  // Human-readable "last seen" for a user, or null if there's genuinely nothing to show
+  // (e.g. they're online right now, or we've never observed a heartbeat/timestamp for
+  // them at all) — callers should hide the line entirely rather than invent a fallback.
+  const getLastSeen = (userId) => {
+    if (isUserOnline(userId)) return null;
+    if (supabaseMode) {
+      const user = users.find(u => u.id === userId);
+      return formatLastSeen(user?.lastSeen);
+    }
+    return formatLastSeen(presenceHeartbeats[userId]);
+  };
 
   // Real authentication — routes to Supabase or the local hashed-password store
   // depending on whether a Supabase project is configured in Admin Settings.
@@ -179,8 +218,6 @@ export const AuthProvider = ({ children }) => {
       avatar: '',
       initials: name.trim().split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase(),
       phone: '',
-      online: true,
-      lastSeen: 'Just now',
       passwordHash
     };
     const updatedUsers = [...latestUsers, newUser];
@@ -192,8 +229,8 @@ export const AuthProvider = ({ children }) => {
     return { success: true };
   };
 
-  // Self-service: update your own name / email / avatar.
-  const updateOwnProfile = async ({ name, email, avatar }) => {
+  // Self-service: update your own name / email / department / phone / avatar.
+  const updateOwnProfile = async ({ name, email, avatar, department, phone }) => {
     if (!currentUser) return { success: false, error: 'Not signed in.' };
     const emailChanged = email && email.toLowerCase() !== currentUser.email.toLowerCase();
 
@@ -202,9 +239,9 @@ export const AuthProvider = ({ children }) => {
         const emailResult = await supaAuth.updateAuthEmail(email);
         if (!emailResult.success) return emailResult;
       }
-      const fieldResult = await supaAuth.updateOwnProfileFields(currentUser.id, { name, email, avatar });
+      const fieldResult = await supaAuth.updateOwnProfileFields(currentUser.id, { name, email, avatar, department, phone });
       if (!fieldResult.success) return fieldResult;
-      const updated = { ...currentUser, name, email, avatar };
+      const updated = { ...currentUser, name, email, avatar, department, phone };
       setCurrentUser(updated);
       setUsers(prev => prev.map(u => u.id === currentUser.id ? updated : u));
       return {
@@ -220,7 +257,7 @@ export const AuthProvider = ({ children }) => {
       }
     }
     const initials = (name || currentUser.name).split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
-    const updatedUsers = users.map(u => u.id === currentUser.id ? { ...u, name, email, avatar, initials } : u);
+    const updatedUsers = users.map(u => u.id === currentUser.id ? { ...u, name, email, avatar, department, phone, initials } : u);
     setUsers(updatedUsers);
     localDb.saveUsers(updatedUsers);
     const updated = updatedUsers.find(u => u.id === currentUser.id);
@@ -237,11 +274,11 @@ export const AuthProvider = ({ children }) => {
     if (supabaseMode) {
       const result = await supaAuth.uploadAvatarImage(currentUser.id, blob, contentType);
       if (!result.success) return result;
-      return updateOwnProfile({ name: currentUser.name, email: currentUser.email, avatar: result.url });
+      return updateOwnProfile({ name: currentUser.name, email: currentUser.email, department: currentUser.department, phone: currentUser.phone, avatar: result.url });
     }
 
     // Local mode: store the resized image directly as a data URL.
-    return updateOwnProfile({ name: currentUser.name, email: currentUser.email, avatar: dataUrl });
+    return updateOwnProfile({ name: currentUser.name, email: currentUser.email, department: currentUser.department, phone: currentUser.phone, avatar: dataUrl });
   };
 
   // Self-service: permanently step away from the app. This is a soft-delete (marks the
@@ -345,8 +382,6 @@ export const AuthProvider = ({ children }) => {
       avatar: workerData.avatar || '',
       initials: workerData.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase(),
       phone: workerData.phone || '+231 88 000 0000',
-      online: true,
-      lastSeen: 'Just now',
       passwordHash
     };
 
@@ -473,7 +508,9 @@ export const AuthProvider = ({ children }) => {
       updateWorkerRole,
       deleteWorker,
       updateSettings,
-      refreshUsers
+      refreshUsers,
+      isUserOnline,
+      getLastSeen
     }}>
       {children}
     </AuthContext.Provider>

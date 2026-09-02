@@ -1,17 +1,21 @@
 import { useState, useRef, useCallback } from 'react';
 
-const MAX_DURATION_SECONDS = 120; // cap recordings so local storage doesn't balloon
-
-// Converts a recorded audio Blob into a base64 data URL, the same storage pattern
-// already used for files/images in this app (see ImagePickerModal / FilePickerModal).
-const blobToDataUrl = (blob) => new Promise((resolve, reject) => {
+// Converts a recorded audio Blob into a base64 data URL — used for local (offline) mode,
+// which has no server to upload to. Exported because the caller (ChatArea) needs it too,
+// to decide per-mode whether to use this or upload the raw blob to Supabase Storage.
+export const blobToDataUrl = (blob) => new Promise((resolve, reject) => {
   const reader = new FileReader();
   reader.onload = () => resolve(reader.result);
   reader.onerror = () => reject(new Error('Could not process the recording.'));
   reader.readAsDataURL(blob);
 });
 
-export const useVoiceRecorder = () => {
+// maxDurationSeconds is a parameter, not a hardcoded constant, because the safe limit is
+// genuinely different per storage mode: a real backend (Supabase Storage) can comfortably
+// hold a full 5-minute voice note, but local/offline mode still has to fit the recording
+// as base64 text inside browser localStorage's few-MB total quota — see the caller in
+// ChatArea.jsx for the actual numbers used for each mode.
+export const useVoiceRecorder = (maxDurationSeconds = 300) => {
   const [isRecording, setIsRecording] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [error, setError] = useState('');
@@ -63,15 +67,15 @@ export const useVoiceRecorder = () => {
         if (e.data.size > 0) chunksRef.current.push(e.data);
       };
 
-      recorder.onstop = async () => {
+      // Resolves with the raw Blob rather than a data URL — the caller decides how to
+      // persist it (upload to Supabase Storage, or convert to base64 for local mode via
+      // the exported blobToDataUrl above), matching the same pattern used for files and
+      // images so a large voice note doesn't hit the exact same localStorage ceiling that
+      // used to silently break large file/image attachments.
+      recorder.onstop = () => {
         cleanupStream();
-        try {
-          const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' });
-          const audioUrl = await blobToDataUrl(blob);
-          resolveRef.current?.({ audioUrl, duration: elapsedSecondsRef.current });
-        } catch (err) {
-          resolveRef.current?.(null);
-        }
+        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        resolveRef.current?.({ blob, mimeType: recorder.mimeType || 'audio/webm', duration: elapsedSecondsRef.current });
       };
 
       recorder.start();
@@ -81,7 +85,7 @@ export const useVoiceRecorder = () => {
       timerRef.current = setInterval(() => {
         elapsedSecondsRef.current += 1;
         setElapsedSeconds(elapsedSecondsRef.current);
-        if (elapsedSecondsRef.current >= MAX_DURATION_SECONDS) {
+        if (elapsedSecondsRef.current >= maxDurationSeconds) {
           stopRecording();
         }
       }, 1000);
@@ -90,7 +94,7 @@ export const useVoiceRecorder = () => {
         ? 'Microphone access was denied. Allow it in your browser settings to record a voice note.'
         : 'Could not access the microphone.');
     }
-  }, [stopRecording]);
+  }, [stopRecording, maxDurationSeconds]);
 
   const cancelRecording = useCallback(() => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {

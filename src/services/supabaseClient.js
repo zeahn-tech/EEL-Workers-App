@@ -76,6 +76,7 @@ export const isSupabaseConfigured = () => {
  *   status TEXT DEFAULT 'Active',
  *   phone TEXT,
  *   avatar TEXT,
+ *   last_seen TIMESTAMP WITH TIME ZONE,
  *   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
  * );
  * 
