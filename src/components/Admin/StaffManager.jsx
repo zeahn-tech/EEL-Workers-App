@@ -18,7 +18,7 @@ import {
   Crown
 } from 'lucide-react';
 
-const ROLE_OPTIONS = ['Worker', 'Dispatcher', 'Admin'];
+const ROLE_OPTIONS = ['Worker', 'Admin'];
 
 export const StaffManager = () => {
   const { users, currentUser, addWorker, updateWorkerStatus, updateWorkerRole, deleteWorker, resetWorkerPassword, supabaseMode } = useAuth();
@@ -122,7 +122,7 @@ export const StaffManager = () => {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
         <div>
           <h2 style={{ fontSize: '20px', fontWeight: 700, color: 'var(--text-main)' }}>
-            EEL Workforce & Staff Management
+            Workforce & Staff Management
           </h2>
           <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
             Admin portal to register new staff, manage roles, suspend or ban workforce accounts.
@@ -341,7 +341,7 @@ export const StaffManager = () => {
             <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <UserPlus size={20} color="var(--amber-primary)" />
-                <h3 style={{ fontSize: '18px', fontWeight: 700 }}>Register New Workforce Member</h3>
+                <h3 style={{ fontSize: '18px', fontWeight: 700 }}>Register New Workr</h3>
               </div>
               <button className="btn btn-secondary btn-icon" onClick={() => setShowAddModal(false)}>
                 <X size={18} />
@@ -351,7 +351,7 @@ export const StaffManager = () => {
             <form onSubmit={handleAddWorker} style={{ padding: '20px' }}>
               <div style={{ marginBottom: '14px' }}>
                 <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
-                  Full Worker Name
+                  Full Name
                 </label>
                 <input 
                   type="text" 
@@ -365,7 +365,7 @@ export const StaffManager = () => {
 
               <div style={{ marginBottom: '14px' }}>
                 <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
-                  Company Email
+                  Worker Email
                 </label>
                 <input 
                   type="email" 
