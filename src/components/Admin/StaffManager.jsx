@@ -387,14 +387,14 @@ export const StaffManager = () => {
                     value={formData.role}
                     onChange={e => setFormData({ ...formData, role: e.target.value })}
                   >
-                    <option value="Worker">Driver</option>
+                    <option value="Worker">Light Vehicle Driver</option>
                     <option value="Manager">Logistics Manager</option>
                     <option value="Admin">Executive Admin</option>
-                    <option value="Worker">Driver</option>
-                    <option value="Worker">Tally Clerk</option>
-                    <option value="Worker">Data Clerk</option>
-                    <option value="Worker">HR</option>
-                    <option value="Worker">Fuel Clerk</option>
+                    <option value="Bus">Bus Driver</option>
+                    <option value="Tally">Tally Clerk</option>
+                    <option value="DATA">Data Clerk</option>
+                    <option value="HR">HR</option>
+                    <option value="Fuel">Fuel Clerk</option>
                     <option value="Direct">Director / CEO</option>
                     <option value="Supervisor">General Supervisor</option>
                   </select>
