@@ -70,7 +70,7 @@ export const SystemSettings = () => {
       <div style={{ marginBottom: '24px' }}>
         <h2 style={{ fontSize: '20px', fontWeight: 700, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Settings size={22} color="var(--amber-primary)" />
-          <span>System & Branding Settings</span>
+          <span>EEL System & Branding Settings</span>
         </h2>
         <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
           Configure enterprise branding, dynamic company logo upload, and live Supabase cloud database credentials.
@@ -82,7 +82,7 @@ export const SystemSettings = () => {
         <div className="glass-panel" style={{ padding: '20px', borderRadius: 'var(--radius-md)', marginBottom: '20px', border: '1px solid var(--border-amber)' }}>
           <h3 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--amber-primary)', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <ImageIcon size={18} />
-            <span>Company Logo (Dynamic Branding)</span>
+            <span>Company Logo Upload (Dynamic Branding)</span>
           </h3>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
@@ -125,7 +125,7 @@ export const SystemSettings = () => {
                   onClick={() => logoInputRef.current?.click()}
                 >
                   <Upload size={16} />
-                  <span>Upload Logo</span>
+                  <span>Upload New Logo</span>
                 </button>
 
                 {appLogo && (
@@ -135,13 +135,13 @@ export const SystemSettings = () => {
                     onClick={handleResetLogo}
                   >
                     <RotateCcw size={14} />
-                    <span>Reset</span>
+                    <span>Reset Logo</span>
                   </button>
                 )}
               </div>
 
               <p style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.4 }}>
-                Upload PNG, JPG, or SVG company emblem.
+                Upload PNG, JPG, or SVG company emblem. Logo updates dynamically on headers, sign-in screens, and PWA icons.
               </p>
             </div>
           </div>
@@ -151,7 +151,7 @@ export const SystemSettings = () => {
         <div className="glass-panel" style={{ padding: '20px', borderRadius: 'var(--radius-md)', marginBottom: '20px' }}>
           <h3 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--amber-primary)', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Building2 size={18} />
-            <span>Company Profile</span>
+            <span>Company General Profile</span>
           </h3>
 
           <div style={{ marginBottom: '14px' }}>
@@ -169,7 +169,7 @@ export const SystemSettings = () => {
 
           <div>
             <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
-              App Tagline
+              App Tagline / Subtitle
             </label>
             <input 
               type="text"
@@ -185,7 +185,7 @@ export const SystemSettings = () => {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
             <h3 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--amber-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Database size={18} />
-              <span>Cloud Integration</span>
+              <span>Supabase Cloud Integration</span>
             </h3>
 
             <span className={`badge ${connectedToSupabase ? 'badge-active' : 'badge-suspended'}`}>
@@ -201,7 +201,7 @@ export const SystemSettings = () => {
 
           <div style={{ marginBottom: '14px' }}>
             <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
-              Project URL
+              Supabase Project URL
             </label>
             <div style={{ position: 'relative' }}>
               <Globe size={16} color="var(--amber-primary)" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
@@ -218,7 +218,7 @@ export const SystemSettings = () => {
 
           <div>
             <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
-              Public API Key
+              Supabase Anon Public API Key
             </label>
             <div style={{ position: 'relative' }}>
               <Key size={16} color="var(--amber-primary)" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />

@@ -50,10 +50,10 @@ export const ChatArea = () => {
   const endRef = useRef(null);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
-  const handleSend = (e) => {
+  const handleSend = async (e) => {
     e.preventDefault();
     if (!inputText.trim() || isSuspended || isBanned) return;
-    const result = sendMessage(inputText);
+    const result = await sendMessage(inputText);
     if (result && !result.success && result.error) {
       setSendError(result.error);
       return; // keep the typed text so nothing is lost
@@ -99,23 +99,23 @@ export const ChatArea = () => {
       }
     }
 
-    const sendResult = sendVoiceMessage({ audioUrl, duration: result.duration });
+    const sendResult = await sendVoiceMessage({ audioUrl, duration: result.duration });
     if (sendResult && !sendResult.success && sendResult.error) setSendError(sendResult.error);
     setIsSendingVoice(false);
   };
 
-  const handleSendFile = (fileData) => {
-    const result = sendFileMessage(fileData);
+  const handleSendFile = async (fileData) => {
+    const result = await sendFileMessage(fileData);
     if (result && !result.success && result.error) setSendError(result.error);
   };
 
-  const handleSendImage = (imageData, caption) => {
-    const result = sendImageMessage(imageData, caption);
+  const handleSendImage = async (imageData, caption) => {
+    const result = await sendImageMessage(imageData, caption);
     if (result && !result.success && result.error) setSendError(result.error);
   };
 
-  const handleSendLocation = (locationData) => {
-    const result = sendLocationMessage(locationData);
+  const handleSendLocation = async (locationData) => {
+    const result = await sendLocationMessage(locationData);
     if (result && !result.success && result.error) setSendError(result.error);
   };
 

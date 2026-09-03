@@ -15,10 +15,196 @@ import {
   KeyRound,
   Copy,
   Check,
-  Crown
+  Crown,
+  Archive,
+  ChevronDown,
+  ChevronRight
 } from 'lucide-react';
 
-const ROLE_OPTIONS = ['Worker', 'Admin'];
+const ROLE_OPTIONS = ['Worker', 'Dispatcher', 'Admin'];
+
+// One staff card — extracted so the exact same rendering (avatar, role selector, contact
+// details, action buttons) is shared between the main active-staff grid and the collapsed
+// "Deleted Accounts" section below it, instead of duplicating ~150 lines of JSX twice.
+const StaffCard = ({ u, currentUser, adminCount, changingRoleFor, onRoleChange, onUpdateStatus, onResetPassword, onDelete }) => (
+  <div className="glass-panel" style={{
+    padding: '16px',
+    borderRadius: 'var(--radius-md)',
+    border: u.status === 'Banned' ? '1px solid #EF4444' : u.status === 'Suspended' ? '1px solid #F59E0B' : '1px solid var(--border-subtle)',
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'space-between'
+  }}>
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{
+            width: '40px',
+            height: '40px',
+            borderRadius: '50%',
+            background: u.status === 'Banned' ? '#EF4444' : u.status === 'Suspended' ? '#F59E0B' : u.status === 'Deleted' ? 'var(--text-dim)' : 'var(--amber-primary)',
+            color: u.status !== 'Active' ? 'white' : 'var(--navy-dark)',
+            fontWeight: 700,
+            fontSize: '15px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
+            {u.initials}
+          </div>
+          <div>
+            <h3 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-main)' }}>
+              {u.name} {u.role === 'Admin' && <Crown size={13} color="var(--amber-primary)" style={{ display: 'inline', verticalAlign: -1 }} />}
+            </h3>
+            {u.status === 'Deleted' ? (
+              <span style={{ fontSize: '11px', color: 'var(--amber-primary)', fontWeight: 600 }}>
+                {u.role}
+              </span>
+            ) : (
+              <select
+                className="input-field"
+                value={u.role}
+                disabled={changingRoleFor === u.id}
+                onChange={e => onRoleChange(u, e.target.value)}
+                title={u.role === 'Admin' && adminCount <= 1 ? 'This is the only Admin — promote someone else first to change this' : 'Change role'}
+                style={{
+                  fontSize: '11px', fontWeight: 600, color: 'var(--amber-primary)',
+                  padding: '2px 6px', minHeight: 'auto', height: 22, width: 'auto',
+                  border: '1px solid var(--border-subtle)', background: 'transparent'
+                }}
+              >
+                {ROLE_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
+            )}
+          </div>
+        </div>
+
+        <span className={`badge badge-${u.status.toLowerCase()}`}>
+          {u.status}
+        </span>
+      </div>
+
+      {/* Contact Details */}
+      <div style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <Mail size={12} color="var(--amber-primary)" />
+          <span>{u.email}</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <Building2 size={12} color="var(--amber-primary)" />
+          <span>{u.department}</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <Phone size={12} color="var(--amber-primary)" />
+          <span>{u.phone}</span>
+        </div>
+      </div>
+    </div>
+
+    {/* Status actions (suspend / ban / reset password / delete) are intentionally
+        scoped to non-Admin rows only — this keeps Admins from locking each other
+        out via suspend/ban. Role changes (including demoting an Admin) are handled
+        by the selector above instead, which is safe to expose for every row because
+        the "never zero Admins" rule is enforced in the database itself. */}
+    {u.role !== 'Admin' && (
+      <div style={{
+        paddingTop: '12px',
+        borderTop: '1px solid var(--border-subtle)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '8px'
+      }}>
+        {u.status === 'Deleted' ? (
+          <>
+            {/* Deleted accounts: just Restore or purge permanently */}
+            <button
+              className="btn btn-secondary"
+              onClick={() => onUpdateStatus(u.id, 'Active')}
+              style={{ fontSize: '11px', padding: '4px 8px' }}
+            >
+              <UserCheck size={14} color="#10B981" />
+              <span>Restore Account</span>
+            </button>
+            <button
+              className="btn btn-secondary btn-icon"
+              onClick={() => onDelete(u)}
+              title="Delete Worker Permanently"
+              style={{ width: '28px', height: '28px', color: '#EF4444' }}
+            >
+              <Trash2 size={14} />
+            </button>
+          </>
+        ) : (
+          <>
+            {/* Suspend / Unsuspend */}
+            {u.status === 'Suspended' ? (
+              <button
+                className="btn btn-secondary"
+                onClick={() => onUpdateStatus(u.id, 'Active')}
+                style={{ fontSize: '11px', padding: '4px 8px' }}
+              >
+                <UserCheck size={14} color="#10B981" />
+                <span>Unsuspend</span>
+              </button>
+            ) : (
+              <button
+                className="btn btn-secondary"
+                onClick={() => onUpdateStatus(u.id, 'Suspended')}
+                style={{ fontSize: '11px', padding: '4px 8px', color: '#F59E0B' }}
+              >
+                <ShieldAlert size={14} />
+                <span>Suspend</span>
+              </button>
+            )}
+
+            {/* Ban / Unban */}
+            {u.status === 'Banned' ? (
+              <button
+                className="btn btn-secondary"
+                onClick={() => onUpdateStatus(u.id, 'Active')}
+                style={{ fontSize: '11px', padding: '4px 8px' }}
+              >
+                <UserCheck size={14} color="#10B981" />
+                <span>Unban</span>
+              </button>
+            ) : (
+              <button
+                className="btn btn-danger"
+                onClick={() => onUpdateStatus(u.id, 'Banned')}
+                style={{ fontSize: '11px', padding: '4px 8px' }}
+              >
+                <Ban size={14} />
+                <span>Ban Worker</span>
+              </button>
+            )}
+
+            {/* Reset Password */}
+            <button
+              className="btn btn-secondary"
+              onClick={() => onResetPassword(u)}
+              style={{ fontSize: '11px', padding: '4px 8px' }}
+              title="Issue a new temporary password"
+            >
+              <KeyRound size={14} color="var(--amber-primary)" />
+              <span className="mobile-hide">Reset Password</span>
+            </button>
+
+            {/* Delete Worker */}
+            <button
+              className="btn btn-secondary btn-icon"
+              onClick={() => onDelete(u)}
+              title="Delete Worker"
+              style={{ width: '28px', height: '28px', color: '#EF4444' }}
+            >
+              <Trash2 size={14} />
+            </button>
+          </>
+        )}
+      </div>
+    )}
+  </div>
+);
 
 export const StaffManager = () => {
   const { users, currentUser, addWorker, updateWorkerStatus, updateWorkerRole, deleteWorker, resetWorkerPassword, supabaseMode } = useAuth();
@@ -29,6 +215,7 @@ export const StaffManager = () => {
   const [issuedCreds, setIssuedCreds] = useState(null); // { name, email, tempPassword } or { name, email, emailSent }
   const [copied, setCopied] = useState(false);
   const [changingRoleFor, setChangingRoleFor] = useState(null); // userId currently mid-request
+  const [showDeleted, setShowDeleted] = useState(false);
 
   // Form State for Adding Worker
   const [formData, setFormData] = useState({
@@ -45,6 +232,15 @@ export const StaffManager = () => {
     u.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
     u.department.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  // Deleted accounts are kept out of the main staff grid entirely — a deleted worker
+  // disappearing from view is the whole point of deleting them, and mixing tombstoned
+  // accounts in with active staff made the tab feel cluttered rather than a clean roster.
+  // They're not gone, though: Restore and Permanent Delete both remain fully available in
+  // the collapsed section below, so nothing about account recovery/cleanup is lost — it's
+  // just tucked out of the way until an Admin actually wants to look at it.
+  const activeStaff = filtered.filter(u => u.status !== 'Deleted');
+  const deletedStaff = filtered.filter(u => u.status === 'Deleted');
 
   const adminCount = users.filter(u => u.role === 'Admin').length;
 
@@ -81,8 +277,20 @@ export const StaffManager = () => {
   };
 
   const handleDelete = async (u) => {
-    if (!window.confirm(`Are you sure you want to delete worker ${u.name}?`)) return;
-    const result = await deleteWorker(u.id);
+    if (u.status === 'Deleted') {
+      // This account already went through the soft-delete step below — this is the real,
+      // irreversible removal, so it gets a much stronger warning than a normal delete.
+      if (!window.confirm(`Permanently delete ${u.name}? This cannot be undone — their account and login will be erased completely. (Past messages stay in history, attributed to a removed user.)`)) return;
+      const result = await deleteWorker(u.id);
+      if (result && result.error) alert(`Could not delete worker: ${result.error}`);
+      return;
+    }
+    // Soft delete: moves them to the Deleted Accounts section, signs them out, and blocks
+    // login — but stays fully reversible via Restore, exactly like self-service account
+    // deletion already works. This is what actually satisfies "can be restored or
+    // permanently deleted" — an immediate hard delete here would leave no way back.
+    if (!window.confirm(`Delete ${u.name}'s account? They'll be signed out and moved to Deleted Accounts, where you can restore them or delete permanently later.`)) return;
+    const result = await updateWorkerStatus(u.id, 'Deleted');
     if (result && result.error) alert(`Could not delete worker: ${result.error}`);
   };
 
@@ -122,7 +330,7 @@ export const StaffManager = () => {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
         <div>
           <h2 style={{ fontSize: '20px', fontWeight: 700, color: 'var(--text-main)' }}>
-            Workforce & Staff Management
+            EEL Workforce & Staff Management
           </h2>
           <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
             Admin portal to register new staff, manage roles, suspend or ban workforce accounts.
@@ -151,188 +359,65 @@ export const StaffManager = () => {
         />
       </div>
 
-      {/* Staff Table / Cards */}
+      {/* Active Staff Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
-        {filtered.map(u => (
-          <div key={u.id} className="glass-panel" style={{
-            padding: '16px',
-            borderRadius: 'var(--radius-md)',
-            border: u.status === 'Banned' ? '1px solid #EF4444' : u.status === 'Suspended' ? '1px solid #F59E0B' : u.status === 'Deleted' ? '1px solid var(--border-subtle)' : '1px solid var(--border-subtle)',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'space-between'
-          }}>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <div style={{
-                    width: '40px',
-                    height: '40px',
-                    borderRadius: '50%',
-                    background: u.status === 'Banned' ? '#EF4444' : u.status === 'Suspended' ? '#F59E0B' : u.status === 'Deleted' ? 'var(--text-dim)' : 'var(--amber-primary)',
-                    color: u.status !== 'Active' ? 'white' : 'var(--navy-dark)',
-                    fontWeight: 700,
-                    fontSize: '15px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                  }}>
-                    {u.initials}
-                  </div>
-                  <div>
-                    <h3 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-main)' }}>
-                      {u.name} {u.role === 'Admin' && <Crown size={13} color="var(--amber-primary)" style={{ display: 'inline', verticalAlign: -1 }} />}
-                    </h3>
-                    {u.status === 'Deleted' ? (
-                      <span style={{ fontSize: '11px', color: 'var(--amber-primary)', fontWeight: 600 }}>
-                        {u.role}
-                      </span>
-                    ) : (
-                      <select
-                        className="input-field"
-                        value={u.role}
-                        disabled={changingRoleFor === u.id}
-                        onChange={e => handleRoleChange(u, e.target.value)}
-                        title={u.role === 'Admin' && adminCount <= 1 ? 'This is the only Admin — promote someone else first to change this' : 'Change role'}
-                        style={{
-                          fontSize: '11px', fontWeight: 600, color: 'var(--amber-primary)',
-                          padding: '2px 6px', minHeight: 'auto', height: 22, width: 'auto',
-                          border: '1px solid var(--border-subtle)', background: 'transparent'
-                        }}
-                      >
-                        {ROLE_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
-                      </select>
-                    )}
-                  </div>
-                </div>
-
-                <span className={`badge badge-${u.status.toLowerCase()}`}>
-                  {u.status}
-                </span>
-              </div>
-
-              {/* Contact Details */}
-              <div style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '16px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Mail size={12} color="var(--amber-primary)" />
-                  <span>{u.email}</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Building2 size={12} color="var(--amber-primary)" />
-                  <span>{u.department}</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Phone size={12} color="var(--amber-primary)" />
-                  <span>{u.phone}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Status actions (suspend / ban / reset password / delete) are intentionally
-                scoped to non-Admin rows only — this keeps Admins from locking each other
-                out via suspend/ban. Role changes (including demoting an Admin) are handled
-                by the selector above instead, which is safe to expose for every row because
-                the "never zero Admins" rule is enforced in the database itself. */}
-            {u.role !== 'Admin' && (
-              <div style={{ 
-                paddingTop: '12px', 
-                borderTop: '1px solid var(--border-subtle)', 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'space-between',
-                gap: '8px' 
-              }}>
-                {u.status === 'Deleted' ? (
-                  <>
-                    {/* Self-deleted accounts: just Restore or purge permanently */}
-                    <button 
-                      className="btn btn-secondary"
-                      onClick={() => handleUpdateStatus(u.id, 'Active')}
-                      style={{ fontSize: '11px', padding: '4px 8px' }}
-                    >
-                      <UserCheck size={14} color="#10B981" />
-                      <span>Restore Account</span>
-                    </button>
-                    <button 
-                      className="btn btn-secondary btn-icon"
-                      onClick={() => handleDelete(u)}
-                      title="Delete Worker Permanently"
-                      style={{ width: '28px', height: '28px', color: '#EF4444' }}
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    {/* Suspend / Unsuspend */}
-                    {u.status === 'Suspended' ? (
-                      <button 
-                        className="btn btn-secondary"
-                        onClick={() => handleUpdateStatus(u.id, 'Active')}
-                        style={{ fontSize: '11px', padding: '4px 8px' }}
-                      >
-                        <UserCheck size={14} color="#10B981" />
-                        <span>Unsuspend</span>
-                      </button>
-                    ) : (
-                      <button 
-                        className="btn btn-secondary"
-                        onClick={() => handleUpdateStatus(u.id, 'Suspended')}
-                        style={{ fontSize: '11px', padding: '4px 8px', color: '#F59E0B' }}
-                      >
-                        <ShieldAlert size={14} />
-                        <span>Suspend</span>
-                      </button>
-                    )}
-
-                    {/* Ban / Unban */}
-                    {u.status === 'Banned' ? (
-                      <button 
-                        className="btn btn-secondary"
-                        onClick={() => handleUpdateStatus(u.id, 'Active')}
-                        style={{ fontSize: '11px', padding: '4px 8px' }}
-                      >
-                        <UserCheck size={14} color="#10B981" />
-                        <span>Unban</span>
-                      </button>
-                    ) : (
-                      <button 
-                        className="btn btn-danger"
-                        onClick={() => handleUpdateStatus(u.id, 'Banned')}
-                        style={{ fontSize: '11px', padding: '4px 8px' }}
-                      >
-                        <Ban size={14} />
-                        <span>Ban Worker</span>
-                      </button>
-                    )}
-
-                    {/* Reset Password */}
-                    <button 
-                      className="btn btn-secondary"
-                      onClick={() => handleResetPassword(u)}
-                      style={{ fontSize: '11px', padding: '4px 8px' }}
-                      title="Issue a new temporary password"
-                    >
-                      <KeyRound size={14} color="var(--amber-primary)" />
-                      <span className="mobile-hide">Reset Password</span>
-                    </button>
-
-                    {/* Delete Worker */}
-                    <button 
-                      className="btn btn-secondary btn-icon"
-                      onClick={() => handleDelete(u)}
-                      title="Delete Worker Permanently"
-                      style={{ width: '28px', height: '28px', color: '#EF4444' }}
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
+        {activeStaff.map(u => (
+          <StaffCard
+            key={u.id}
+            u={u}
+            currentUser={currentUser}
+            adminCount={adminCount}
+            changingRoleFor={changingRoleFor}
+            onRoleChange={handleRoleChange}
+            onUpdateStatus={handleUpdateStatus}
+            onResetPassword={handleResetPassword}
+            onDelete={handleDelete}
+          />
         ))}
       </div>
+
+      {activeStaff.length === 0 && deletedStaff.length === 0 && (
+        <p style={{ fontSize: '13px', color: 'var(--text-muted)', textAlign: 'center', padding: '30px 0' }}>
+          No staff match "{searchQuery}".
+        </p>
+      )}
+
+      {/* Deleted Accounts — collapsed by default to keep the main roster clean.
+          Restore and Permanent Delete remain fully available once expanded. */}
+      {deletedStaff.length > 0 && (
+        <div style={{ marginTop: '24px' }}>
+          <button
+            onClick={() => setShowDeleted(!showDeleted)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '8px', background: 'none', border: 'none',
+              cursor: 'pointer', color: 'var(--text-muted)', fontSize: '13px', fontWeight: 600,
+              padding: '8px 0', width: '100%', borderTop: '1px solid var(--border-subtle)'
+            }}
+          >
+            {showDeleted ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+            <Archive size={14} />
+            <span>Deleted Accounts ({deletedStaff.length})</span>
+          </button>
+
+          {showDeleted && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px', marginTop: '12px' }}>
+              {deletedStaff.map(u => (
+                <StaffCard
+                  key={u.id}
+                  u={u}
+                  currentUser={currentUser}
+                  adminCount={adminCount}
+                  changingRoleFor={changingRoleFor}
+                  onRoleChange={handleRoleChange}
+                  onUpdateStatus={handleUpdateStatus}
+                  onResetPassword={handleResetPassword}
+                  onDelete={handleDelete}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Add Worker Modal */}
       {showAddModal && (
@@ -341,7 +426,7 @@ export const StaffManager = () => {
             <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <UserPlus size={20} color="var(--amber-primary)" />
-                <h3 style={{ fontSize: '18px', fontWeight: 700 }}>Register New Worker</h3>
+                <h3 style={{ fontSize: '18px', fontWeight: 700 }}>Register New Workforce Member</h3>
               </div>
               <button className="btn btn-secondary btn-icon" onClick={() => setShowAddModal(false)}>
                 <X size={18} />
@@ -351,7 +436,7 @@ export const StaffManager = () => {
             <form onSubmit={handleAddWorker} style={{ padding: '20px' }}>
               <div style={{ marginBottom: '14px' }}>
                 <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
-                  Full Name
+                  Full Worker Name
                 </label>
                 <input 
                   type="text" 
@@ -365,7 +450,7 @@ export const StaffManager = () => {
 
               <div style={{ marginBottom: '14px' }}>
                 <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
-                  Worker Email
+                  Company Email
                 </label>
                 <input 
                   type="email" 
@@ -387,16 +472,9 @@ export const StaffManager = () => {
                     value={formData.role}
                     onChange={e => setFormData({ ...formData, role: e.target.value })}
                   >
-                    <option value="Worker">Light Vehicle Driver</option>
-                    <option value="Manager">Logistics Manager</option>
+                    <option value="Worker">Worker / Driver</option>
+                    <option value="Dispatcher">Logistics Dispatcher</option>
                     <option value="Admin">Executive Admin</option>
-                    <option value="Bus">Bus Driver</option>
-                    <option value="Tally">Tally Clerk</option>
-                    <option value="DATA">Data Clerk</option>
-                    <option value="HR">HR</option>
-                    <option value="Fuel">Fuel Clerk</option>
-                    <option value="Direct">Director / CEO</option>
-                    <option value="Supervisor">General Supervisor</option>
                   </select>
                 </div>
 

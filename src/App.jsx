@@ -3,6 +3,7 @@ import { AuthProvider } from './context/AuthContext';
 import { ChatProvider, useChat } from './context/ChatContext';
 import { ChatSidebar } from './components/Chat/ChatSidebar';
 import { ChatArea } from './components/Chat/ChatArea';
+import { MessageToast } from './components/Chat/MessageToast';
 import { StaffManager } from './components/Admin/StaffManager';
 import { SystemSettings } from './components/Admin/SystemSettings';
 import { GroupManager } from './components/Admin/GroupManager';
@@ -101,7 +102,7 @@ const AppHeader = ({ onToggleSidebar, sidebarOpen, onOpenProfile, installPrompt,
               <span className="mobile-hide">Install App</span>
             </button>
             {showIosPanel && (
-              <div className="glass-panel amber-border animate-fade-in" style={{
+              <div className="dropdown-panel amber-border animate-fade-in" style={{
                 position: 'absolute', top: 44, right: 0, width: 250,
                 borderRadius: 'var(--radius-md)', padding: 14,
                 boxShadow: 'var(--shadow-lg)', zIndex: 200, fontSize: 12, color: 'var(--text-main)'
@@ -153,7 +154,7 @@ const AppHeader = ({ onToggleSidebar, sidebarOpen, onOpenProfile, installPrompt,
           </button>
 
           {showDropdown && (
-            <div className="glass-panel animate-fade-in" style={{
+            <div className="dropdown-panel animate-fade-in" style={{
               position: 'absolute', top: 44, right: 0, width: 240,
               borderRadius: 'var(--radius-md)', border: '1px solid var(--border-amber)',
               padding: 6, boxShadow: 'var(--shadow-lg)', zIndex: 200
@@ -211,8 +212,14 @@ const AdminModal = ({ onClose }) => {
 
   if (!isAdmin) return null;
 
-  const activeCount = users.filter(u => u.status === 'Active').length;
-  const flaggedCount = users.filter(u => u.status !== 'Active').length;
+  // "Total Staff" and "Suspended / Banned" reflect the visible, active roster — matching
+  // Staff Manager, where Deleted accounts are tucked into their own collapsed section
+  // rather than mixed into the main list. Counting them here too would make these numbers
+  // inconsistent with what's actually shown, undermining the whole point of hiding them.
+  const nonDeletedUsers = users.filter(u => u.status !== 'Deleted');
+  const activeCount = nonDeletedUsers.filter(u => u.status === 'Active').length;
+  const flaggedCount = nonDeletedUsers.filter(u => u.status === 'Suspended' || u.status === 'Banned').length;
+  const deletedCount = users.length - nonDeletedUsers.length;
   const adminCount = users.filter(u => u.role === 'Admin').length;
 
   const navItems = [
@@ -255,7 +262,7 @@ const AdminModal = ({ onClose }) => {
         {/* Stats overview */}
         <div style={{ display: 'flex', gap: 10, padding: '14px 18px', flexWrap: 'wrap', borderBottom: '1px solid var(--border-subtle)', flexShrink: 0 }}>
           <div className="admin-stat-card">
-            <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text-main)' }}>{users.length}</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text-main)' }}>{nonDeletedUsers.length}</div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Total Staff</div>
           </div>
           <div className="admin-stat-card">
@@ -274,6 +281,12 @@ const AdminModal = ({ onClose }) => {
             <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text-main)' }}>{groups.length}</div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Group Channels</div>
           </div>
+          {deletedCount > 0 && (
+            <div className="admin-stat-card">
+              <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text-dim)' }}>{deletedCount}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Deleted</div>
+            </div>
+          )}
         </div>
 
         {/* Nav + Content */}
@@ -398,6 +411,7 @@ const AppLayout = () => {
       {showAdmin && <AdminModal onClose={() => setShowAdmin(false)} />}
       {showProfile && <ProfileSettings onClose={() => setShowProfile(false)} />}
       <GroupCreator isOpen={showGroupCreator} onClose={() => setShowGroupCreator(false)} />
+      <MessageToast />
     </div>
   );
 };

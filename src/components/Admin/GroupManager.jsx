@@ -16,9 +16,10 @@ export const GroupManager = () => {
     (g.description || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleDelete = (group) => {
+  const handleDelete = async (group) => {
     if (!window.confirm(`Delete the "${group.name}" channel? This removes it for everyone — message history stays intact but the channel disappears from the sidebar.`)) return;
-    deleteGroup(group.id);
+    const result = await deleteGroup(group.id);
+    if (result && !result.success) alert(`Could not delete channel: ${result.error}`);
   };
 
   const memberNames = (group) =>

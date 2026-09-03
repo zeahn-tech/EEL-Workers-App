@@ -194,7 +194,7 @@ export const MessageBubble = ({ message, isMe, onOpenLightbox, onEdit, onDelete 
             {showMenu && (
               <>
                 <div onClick={() => setShowMenu(false)} style={{ position: 'fixed', inset: 0, zIndex: 199 }} />
-                <div className="glass-panel amber-border animate-fade-in" style={{
+                <div className="dropdown-panel amber-border animate-fade-in" style={{
                   position: 'absolute', top: 24, [isMe ? 'right' : 'left']: 0, width: 130,
                   borderRadius: 'var(--radius-md)', padding: 4, zIndex: 200, boxShadow: 'var(--shadow-lg)'
                 }}>

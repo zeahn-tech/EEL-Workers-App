@@ -1,12 +1,19 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useChat } from '../../context/ChatContext';
-import { Search, Plus, Hash, User, Settings, AlertTriangle } from 'lucide-react';
+import { Search, Plus, Hash, User, Settings, AlertTriangle, Bell, BellOff, BellRing } from 'lucide-react';
+import { getNotificationPermission, requestNotificationPermission } from '../../services/notifications';
 
 export const ChatSidebar = ({ onOpenGroupCreator, onSelectChat, onOpenAdmin, onOpenProfile }) => {
   const { users, currentUser, isAdmin, supabaseMode, refreshUsers, isUserOnline, getLastSeen } = useAuth();
-  const { groups, activeChat, setActiveChat, searchQuery, setSearchQuery } = useChat();
+  const { groups, activeChat, setActiveChat, searchQuery, setSearchQuery, unreadCounts } = useChat();
   const [retrying, setRetrying] = useState(false);
+  const [notifPermission, setNotifPermission] = useState(getNotificationPermission());
+
+  const handleEnableNotifications = async () => {
+    const result = await requestNotificationPermission();
+    setNotifPermission(result);
+  };
 
   // The staff directory came back empty in Supabase mode. The very first account on a
   // fresh deployment is made Admin automatically by a database trigger (see
@@ -44,12 +51,32 @@ export const ChatSidebar = ({ onOpenGroupCreator, onSelectChat, onOpenAdmin, onO
       <div style={{ padding: '12px', borderBottom: '1px solid var(--border-subtle)', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
           <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-main)' }}>Channels & Staff</span>
-          {isAdmin && (
-            <button className="btn btn-primary" onClick={onOpenGroupCreator}
-              style={{ padding: '4px 10px', fontSize: 11, minHeight: 30 }}>
-              <Plus size={13} /> New Group
-            </button>
-          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {notifPermission !== 'unsupported' && (
+              <button
+                onClick={notifPermission === 'default' ? handleEnableNotifications : undefined}
+                title={
+                  notifPermission === 'granted' ? 'Notifications enabled'
+                  : notifPermission === 'denied' ? 'Notifications blocked — enable them in your browser site settings'
+                  : 'Enable desktop notifications for new messages'
+                }
+                className="btn btn-secondary btn-icon"
+                style={{
+                  width: 30, height: 30, minHeight: 30, flexShrink: 0,
+                  cursor: notifPermission === 'default' ? 'pointer' : 'default',
+                  color: notifPermission === 'granted' ? 'var(--amber-primary)' : 'var(--text-dim)'
+                }}
+              >
+                {notifPermission === 'granted' ? <BellRing size={14} /> : notifPermission === 'denied' ? <BellOff size={14} /> : <Bell size={14} />}
+              </button>
+            )}
+            {isAdmin && (
+              <button className="btn btn-primary" onClick={onOpenGroupCreator}
+                style={{ padding: '4px 10px', fontSize: 11, minHeight: 30 }}>
+                <Plus size={13} /> New Group
+              </button>
+            )}
+          </div>
         </div>
         {/* Search */}
         <div style={{ position: 'relative' }}>
@@ -72,6 +99,7 @@ export const ChatSidebar = ({ onOpenGroupCreator, onSelectChat, onOpenAdmin, onO
         </p>
         {filteredGroups.map(g => {
           const active = activeChat?.id === g.id;
+          const unread = unreadCounts[g.id] || 0;
           return (
             <button key={g.id} onClick={() => handleSelect(g)} style={{
               width: '100%', padding: '8px 10px', borderRadius: 'var(--radius-md)', border: 'none',
@@ -91,6 +119,13 @@ export const ChatSidebar = ({ onOpenGroupCreator, onSelectChat, onOpenAdmin, onO
                 </div>
                 <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{g.members.length} members</div>
               </div>
+              {unread > 0 && (
+                <span style={{
+                  flexShrink: 0, background: 'var(--amber-primary)', color: 'var(--navy-dark)',
+                  fontSize: 10, fontWeight: 700, borderRadius: 999, minWidth: 18, height: 18,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 5px'
+                }}>{unread > 99 ? '99+' : unread}</span>
+              )}
             </button>
           );
         })}
@@ -101,6 +136,7 @@ export const ChatSidebar = ({ onOpenGroupCreator, onSelectChat, onOpenAdmin, onO
         </p>
         {filteredUsers.map(u => {
           const active = activeChat?.id === u.id;
+          const unread = unreadCounts[u.id] || 0;
           return (
             <button key={u.id} onClick={() => handleSelect(u)} style={{
               width: '100%', padding: '8px 10px', borderRadius: 'var(--radius-md)', border: 'none',
@@ -146,6 +182,13 @@ export const ChatSidebar = ({ onOpenGroupCreator, onSelectChat, onOpenAdmin, onO
                   {u.department}{!isUserOnline(u.id) && getLastSeen(u.id) ? ` · ${getLastSeen(u.id)}` : ''}
                 </div>
               </div>
+              {unread > 0 && (
+                <span style={{
+                  flexShrink: 0, background: 'var(--amber-primary)', color: 'var(--navy-dark)',
+                  fontSize: 10, fontWeight: 700, borderRadius: 999, minWidth: 18, height: 18,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 5px'
+                }}>{unread > 99 ? '99+' : unread}</span>
+              )}
             </button>
           );
         })}

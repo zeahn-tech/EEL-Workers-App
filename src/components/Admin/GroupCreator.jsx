@@ -14,6 +14,8 @@ export const GroupCreator = ({ isOpen, onClose, editingGroup }) => {
   const [groupName, setGroupName] = useState('');
   const [description, setDescription] = useState('');
   const [selectedMembers, setSelectedMembers] = useState([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
     if (editingGroup) {
@@ -25,6 +27,7 @@ export const GroupCreator = ({ isOpen, onClose, editingGroup }) => {
       setDescription('');
       setSelectedMembers([]);
     }
+    setErrorMsg('');
   }, [editingGroup, isOpen]);
 
   if (!isOpen) return null;
@@ -37,24 +40,29 @@ export const GroupCreator = ({ isOpen, onClose, editingGroup }) => {
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!groupName.trim()) return;
+    setSubmitting(true);
+    setErrorMsg('');
 
-    if (isEditMode) {
-      updateGroup(editingGroup.id, {
-        name: groupName.trim(),
-        description: description.trim(),
-        members: [currentUser.id, ...selectedMembers]
-      });
-    } else {
-      createGroup({
-        name: groupName.trim(),
-        description: description.trim(),
-        members: selectedMembers
-      });
+    const result = isEditMode
+      ? await updateGroup(editingGroup.id, {
+          name: groupName.trim(),
+          description: description.trim(),
+          members: [currentUser.id, ...selectedMembers]
+        })
+      : await createGroup({
+          name: groupName.trim(),
+          description: description.trim(),
+          members: selectedMembers
+        });
+
+    setSubmitting(false);
+    if (!result.success) {
+      setErrorMsg(result.error || 'Could not save this channel. Please try again.');
+      return;
     }
-
     onClose();
   };
 
@@ -180,12 +188,18 @@ export const GroupCreator = ({ isOpen, onClose, editingGroup }) => {
             </div>
           </div>
 
+          {errorMsg && (
+            <div style={{ marginBottom: '12px', color: '#EF4444', fontSize: '13px' }}>
+              {errorMsg}
+            </div>
+          )}
+
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-            <button type="button" className="btn btn-secondary" onClick={onClose}>
+            <button type="button" className="btn btn-secondary" onClick={onClose} disabled={submitting}>
               Cancel
             </button>
-            <button type="submit" className="btn btn-primary" disabled={!groupName.trim()}>
-              {isEditMode ? 'Save Changes' : 'Create Channel'}
+            <button type="submit" className="btn btn-primary" disabled={!groupName.trim() || submitting}>
+              {submitting ? 'Saving…' : (isEditMode ? 'Save Changes' : 'Create Channel')}
             </button>
           </div>
         </form>

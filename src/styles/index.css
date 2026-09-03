@@ -135,6 +135,20 @@ h1, h2, h3, h4, h5, .brand-font {
   border: 1px solid var(--border-subtle);
 }
 
+/* Floating dropdown/popover menus (account menu, install-app hint) need to be much more
+   opaque than a regular glass-panel card. Those cards sit as their own block on the page;
+   these overlay directly on top of live app content behind them — on a small mobile
+   screen especially, glass-panel's 75% opacity let that underlying text show through
+   clearly enough to look like a rendering bug rather than an intentional frosted effect.
+   Same base color as --bg-card (keeps it visually part of the same theme), just far less
+   see-through. */
+.dropdown-panel {
+  background: rgba(30, 41, 59, 0.98);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-subtle);
+}
+
 .amber-border {
   border-color: var(--border-amber) !important;
 }

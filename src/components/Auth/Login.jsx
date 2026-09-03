@@ -75,7 +75,7 @@ export const Login = () => {
                 Install
               </button>
               {showIosPanel && (
-                <div className="glass-panel amber-border animate-fade-in" style={{
+                <div className="dropdown-panel amber-border animate-fade-in" style={{
                   position: 'absolute', top: 38, right: 0, width: 240,
                   borderRadius: 'var(--radius-md)', padding: 14,
                   boxShadow: 'var(--shadow-lg)', zIndex: 200, fontSize: 12, color: 'var(--text-main)'
