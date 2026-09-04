@@ -51,6 +51,17 @@ create table if not exists public.messages (
 create index if not exists messages_chat_id_idx on public.messages (chat_id);
 create index if not exists messages_timestamp_idx on public.messages ("timestamp");
 
+-- Base-level table grants — a different, more fundamental layer than RLS. RLS policies
+-- decide WHICH ROWS a role can see or touch; without these GRANT statements, Postgres
+-- rejects the `authenticated` role before ever reaching RLS at all, for EVERY operation,
+-- with exactly the error this fixes: "permission denied for table <name>". This is a very
+-- easy step to forget when creating tables by hand in the SQL Editor (the Table Editor UI
+-- sets this up automatically; a raw CREATE TABLE here does not) — worth remembering for
+-- any future table added this same way.
+grant usage on schema public to authenticated;
+grant select, insert, update, delete on public.groups to authenticated;
+grant select, insert, update, delete on public.messages to authenticated;
+
 alter table public.groups enable row level security;
 alter table public.messages enable row level security;
 
