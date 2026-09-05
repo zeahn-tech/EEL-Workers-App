@@ -103,18 +103,40 @@ export const updateMessageRow = async (messageId, updates) => {
 // makes a message sent from someone else's device or browser actually arrive here live,
 // which local-mode's BroadcastChannel could never do (it only reaches other tabs in the
 // exact same browser). Returns an unsubscribe function.
+//
+// Logs its own subscription status and every event it receives. This isn't noise — it's
+// the one place that turns "notifications aren't really working" from a guess into
+// something checkable in seconds: open DevTools console and see whether this ever prints
+// "SUBSCRIBED" at all (if not, it's a connection/config problem, not app logic), and
+// whether an event actually arrives when the other person sends something (if it does
+// arrive here but nothing visibly happens, the bug is downstream in ChatContext instead).
 export const subscribeToMessages = (onInsert, onUpdate) => {
   const supabase = getSupabaseClient();
   const channel = supabase
     .channel('messages-realtime')
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+      console.log('[supabaseChat] realtime INSERT received:', payload.new.id, 'chat_id:', payload.new.chat_id);
       onInsert(toAppMessage(payload.new));
     })
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, (payload) => {
+      console.log('[supabaseChat] realtime UPDATE received:', payload.new.id);
       onUpdate(toAppMessage(payload.new));
     })
-    .subscribe();
+    .subscribe((status, err) => {
+      console.log('[supabaseChat] messages-realtime subscription status:', status, err || '');
+    });
   return () => supabase.removeChannel(channel);
+};
+
+// Marks every unread message from `otherUserId` in a direct-message thread as read, via a
+// SECURITY DEFINER RPC rather than a direct table update — see mark_thread_read in
+// profiles-rls-policies.sql for why a narrow function is used instead of a broader RLS
+// policy here. Deliberately DM-only: group read receipts (who among many members has seen
+// a message) are a materially different, bigger feature than this covers.
+export const markThreadRead = async (otherUserId) => {
+  const supabase = getSupabaseClient();
+  const { error } = await supabase.rpc('mark_thread_read', { other_user_id: otherUserId });
+  if (error) console.error('[supabaseChat] markThreadRead failed:', error.message);
 };
 
 // --- Groups -----------------------------------------------------------------
@@ -172,6 +194,36 @@ export const subscribeToGroups = (onChange) => {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'groups' }, () => {
       fetchGroups().then(onChange);
     })
-    .subscribe();
+    .subscribe((status, err) => {
+      console.log('[supabaseChat] groups-realtime subscription status:', status, err || '');
+    });
   return () => supabase.removeChannel(channel);
+};
+
+// --- Typing indicators --------------------------------------------------------
+// Broadcast, not a database table — a typing signal is inherently throwaway; there's
+// nothing worth persisting or that anyone needs to see after the fact. `channelKey` is
+// the same canonical per-chat identifier ChatContext already computes (a group's id, or
+// the two participants' ids sorted and joined for a DM), so everyone in that specific
+// conversation — and only that conversation — shares one broadcast channel.
+//
+// One channel handles both sending and receiving for a given chat (Realtime broadcast
+// channels are bidirectional), reused for as long as that chat stays open — not
+// recreated per keystroke, which would add subscribe-latency to every signal and pile up
+// channels needlessly. Returns { send, unsubscribe }; send is a no-op until the channel
+// actually reaches SUBSCRIBED, which happens well before a person finishes typing anything.
+export const subscribeToTyping = (channelKey, onTyping) => {
+  const supabase = getSupabaseClient();
+  let isReady = false;
+  const channel = supabase
+    .channel(`typing:${channelKey}`)
+    .on('broadcast', { event: 'typing' }, ({ payload }) => onTyping(payload))
+    .subscribe((status) => { isReady = status === 'SUBSCRIBED'; });
+
+  return {
+    send: (payload) => {
+      if (isReady) channel.send({ type: 'broadcast', event: 'typing', payload });
+    },
+    unsubscribe: () => supabase.removeChannel(channel)
+  };
 };

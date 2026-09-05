@@ -275,6 +275,59 @@ create policy "Authenticated users can upload chat media"
   with check (bucket_id = 'chat-media');
 
 -- ---------------------------------------------------------------------------
+-- Realtime: without this, changes to profiles (role/status updates, and the
+-- last_seen heartbeat that powers "last seen X ago" for offline users) never
+-- reach anyone else's screen live — subscribeToProfileChanges' listener simply
+-- never fires. Everything still eventually shows correctly on a full reload
+-- (the app re-fetches the whole directory on every load), so this bug is easy
+-- to miss testing alone in one tab; it only shows up as "seems to work for me
+-- but the other person's screen doesn't update" between two real, separate
+-- sessions — which is exactly the bug this fixes. Safe to re-run.
+-- ---------------------------------------------------------------------------
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'profiles'
+  ) then
+    alter publication supabase_realtime add table public.profiles;
+  end if;
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- Read receipts for direct messages. This needs more than an RLS policy: a
+-- recipient marking a message "read" means updating a row where THEY are not
+-- the sender — but a broad "recipients can update their messages" RLS policy
+-- would also let a recipient tamper with the sender's actual content, since
+-- RLS's WITH CHECK can't easily restrict "only the status column changed"
+-- (there's no OLD row to compare against for that within a check clause).
+-- A narrowly-scoped SECURITY DEFINER function is the correct way to give a
+-- controlled write, not a blanket one — this function does exactly one thing:
+-- flip status to 'read' on messages sent TO the caller, and nothing else.
+-- Group messages deliberately aren't covered by this — per-member read state
+-- for a group is a materially bigger feature (a read receipt per person per
+-- message) than this app's single sender/recipient DM model handles today.
+-- ---------------------------------------------------------------------------
+
+create or replace function public.mark_thread_read(other_user_id text)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  update public.messages
+  set status = 'read'
+  where chat_id = auth.uid()::text
+    and sender_id = other_user_id
+    and status <> 'read'
+    and deleted = false;
+end;
+$$;
+
+grant execute on function public.mark_thread_read(text) to authenticated;
+
+-- ---------------------------------------------------------------------------
 -- ONE-TIME MANUAL STEP — only needed if your profiles table already has rows
 -- and none of them are Admin (i.e. you're already stuck in exactly the state
 -- this whole file is designed to prevent from ever happening again). The

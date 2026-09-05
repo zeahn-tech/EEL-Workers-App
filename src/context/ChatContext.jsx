@@ -8,6 +8,24 @@ const ChatContext = createContext();
 
 const BASE_TITLE = document.title;
 
+// A typing indicator that never clears itself would just stay stuck on screen forever if
+// someone stops typing without sending — this is how long a "so-and-so is typing" entry
+// survives without a fresh signal before it's assumed stale and removed.
+const TYPING_STALE_MS = 4000;
+// How often a signal actually goes out while someone keeps typing continuously — not
+// every keystroke, which would be pure noise on the wire for zero perceptible UX benefit.
+const TYPING_SEND_THROTTLE_MS = 2000;
+
+// The canonical identifier two people (or a whole group) watching the same conversation
+// all agree on — a group's id is already shared, but a DM's chat_id (see buildMessage
+// below) is asymmetric: it's the RECIPIENT's id, which is a different value depending on
+// who's looking at it. Sorting both participants' ids into one joined string gives both
+// sides the exact same channel name regardless of who's viewing from which side.
+const getChatChannelKey = (currentUserId, chat) => {
+  if (!chat) return null;
+  return chat.isGroup ? chat.id : [currentUserId, chat.id].sort().join('_');
+};
+
 export const ChatProvider = ({ children }) => {
   const { currentUser, supabaseMode } = useAuth();
   const [groups, setGroups] = useState([]);
@@ -26,15 +44,68 @@ export const ChatProvider = ({ children }) => {
   const groupsRef = useRef([]);
   useEffect(() => { groupsRef.current = groups; }, [groups]);
 
+  // Who's currently typing in the ACTIVE chat, as { [userId]: { userName, lastSignalAt } }.
+  // Deliberately scoped to just the open conversation, not tracked across every chat at
+  // once — a typing signal is only ever meaningful for the thread you're actually looking
+  // at, the same way real chat apps never show "X is typing" for a conversation you don't
+  // have open.
+  const [typingUsers, setTypingUsers] = useState({});
+  const typingChannelRef = useRef(null); // Supabase mode: the live { send, unsubscribe } handle
+  const lastTypingSentRef = useRef(0);
+  const channelKeyRef = useRef(null); // the active chat's canonical key, kept fresh for listeners
+
+  useEffect(() => {
+    channelKeyRef.current = activeChat ? getChatChannelKey(currentUser?.id, activeChat) : null;
+    setTypingUsers({}); // switching chats — any leftover "typing" from the previous one is stale
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeChat?.id]);
+
+  // Prune stale typing entries — someone who stopped typing without sending anything
+  // would otherwise stay stuck on screen forever with no further signal to clear them.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTypingUsers(prev => {
+        const now = Date.now();
+        const next = {};
+        let changed = false;
+        Object.entries(prev).forEach(([id, info]) => {
+          if (now - info.lastSignalAt < TYPING_STALE_MS) next[id] = info;
+          else changed = true;
+        });
+        return changed ? next : prev;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   const setActiveChat = (chat) => {
     setActiveChatState(chat);
-    if (chat) {
-      setUnreadCounts(prev => {
-        if (!prev[chat.id]) return prev;
-        const next = { ...prev };
-        delete next[chat.id];
-        return next;
-      });
+    if (!chat) return;
+
+    setUnreadCounts(prev => {
+      if (!prev[chat.id]) return prev;
+      const next = { ...prev };
+      delete next[chat.id];
+      return next;
+    });
+
+    // Read receipts are DM-only (see mark_thread_read for why groups aren't covered).
+    // Opening a direct message is what "reading" it means here — there's no separate
+    // per-message "mark as read" action, matching how every mainstream chat app works.
+    if (!chat.isGroup && currentUser) {
+      if (supabaseMode) {
+        supabaseChat.markThreadRead(chat.id);
+      } else {
+        const toMark = localDb.getMessages().filter(m =>
+          m.chatId === currentUser.id && m.senderId === chat.id && m.status !== 'read' && !m.deleted
+        );
+        if (toMark.length > 0) {
+          toMark.forEach(m => {
+            try { localDb.updateMessage(m.id, { status: 'read' }); } catch (err) { /* non-critical */ }
+          });
+          setMessages(localDb.getMessages());
+        }
+      }
     }
   };
 
@@ -132,6 +203,11 @@ export const ChatProvider = ({ children }) => {
             setMessages(prev => prev.map(m => m.id === data.message.id ? data.message : m));
           } else if (data.type === 'GROUPS_UPDATED') {
             setGroups(data.groups);
+          } else if (data.type === 'TYPING') {
+            const { userId, userName, channelKey } = data.payload;
+            if (userId !== currentUser?.id && channelKey === channelKeyRef.current) {
+              setTypingUsers(prev => ({ ...prev, [userId]: { userName, lastSignalAt: Date.now() } }));
+            }
           }
         });
       }
@@ -141,6 +217,43 @@ export const ChatProvider = ({ children }) => {
     return () => { unsubscribeMessages(); unsubscribeGroups(); unsubscribeLocal(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser?.id, supabaseMode]);
+
+  // Typing indicators need their own subscription that follows the ACTIVE CHAT, not just
+  // the signed-in session — unlike messages (one global subscription for everything), a
+  // typing broadcast channel is scoped to a single conversation, so it has to be torn down
+  // and re-created every time the open chat changes. Local mode doesn't need a separate
+  // effect for this — it reuses the one global BroadcastChannel listener above, filtering
+  // by channelKeyRef — this effect only does something in Supabase mode.
+  useEffect(() => {
+    if (!supabaseMode || !currentUser || !activeChat) return;
+    const channelKey = getChatChannelKey(currentUser.id, activeChat);
+    const handle = supabaseChat.subscribeToTyping(channelKey, (payload) => {
+      if (payload.userId !== currentUser.id) {
+        setTypingUsers(prev => ({ ...prev, [payload.userId]: { userName: payload.userName, lastSignalAt: Date.now() } }));
+      }
+    });
+    typingChannelRef.current = handle;
+    return () => {
+      handle.unsubscribe();
+      typingChannelRef.current = null;
+    };
+  }, [supabaseMode, currentUser?.id, activeChat?.id]);
+
+  // Called from the message input on keystrokes — throttled internally, so it's safe to
+  // call on every keystroke without worrying about flooding the channel.
+  const sendTypingSignal = () => {
+    if (!activeChat || !currentUser) return;
+    const now = Date.now();
+    if (now - lastTypingSentRef.current < TYPING_SEND_THROTTLE_MS) return;
+    lastTypingSentRef.current = now;
+    const channelKey = getChatChannelKey(currentUser.id, activeChat);
+    const payload = { userId: currentUser.id, userName: currentUser.name, channelKey };
+    if (supabaseMode) {
+      typingChannelRef.current?.send(payload);
+    } else {
+      localDb.broadcastTyping(payload);
+    }
+  };
 
   const buildMessage = (fields) => ({
     id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
@@ -353,6 +466,10 @@ export const ChatProvider = ({ children }) => {
     }
   });
 
+  // Names of whoever is typing in the active chat right now, for display — derived here
+  // rather than exposing the raw { userId: {...} } map, since no consumer needs the ids.
+  const typingUserNames = Object.values(typingUsers).map(u => u.userName);
+
   return (
     <ChatContext.Provider value={{
       groups,
@@ -373,7 +490,9 @@ export const ChatProvider = ({ children }) => {
       deleteGroup,
       unreadCounts,
       toast,
-      dismissToast: () => setToast(null)
+      dismissToast: () => setToast(null),
+      typingUserNames,
+      sendTypingSignal
     }}>
       {children}
     </ChatContext.Provider>

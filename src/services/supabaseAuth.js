@@ -360,7 +360,9 @@ export const subscribeToProfileChanges = (onChange) => {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => {
       fetchAllProfiles().then(onChange);
     })
-    .subscribe();
+    .subscribe((status, err) => {
+      console.log('[supabaseAuth] profiles-realtime subscription status:', status, err || '');
+    });
   return () => supabase.removeChannel(channel);
 };
 

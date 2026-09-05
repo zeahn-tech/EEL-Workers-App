@@ -325,6 +325,15 @@ export const localDb = {
     localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
   },
 
+  // Typing indicators (local mode): a pure ephemeral signal, deliberately never written
+  // to localStorage — there's nothing here worth persisting, only broadcasting to any
+  // other open tab in this same browser right now.
+  broadcastTyping: (payload) => {
+    if (broadcastChannel) {
+      broadcastChannel.postMessage({ type: 'TYPING', payload });
+    }
+  },
+
   subscribeToChanges: (callback) => {
     if (!broadcastChannel) return () => {};
     const handler = (event) => callback(event.data);

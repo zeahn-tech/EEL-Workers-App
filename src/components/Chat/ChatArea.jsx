@@ -33,7 +33,8 @@ export const ChatArea = () => {
   const { currentUser, isSuspended, isBanned, supabaseMode, isUserOnline, getLastSeen } = useAuth();
   const {
     activeChat, messages, sendMessage, sendFileMessage, sendImageMessage,
-    sendLocationMessage, sendVoiceMessage, editMessage, deleteMessage
+    sendLocationMessage, sendVoiceMessage, editMessage, deleteMessage,
+    typingUserNames, sendTypingSignal
   } = useChat();
   const maxRecordingSeconds = supabaseMode ? VOICE_MAX_SECONDS_SUPABASE : VOICE_MAX_SECONDS_LOCAL;
   const { isRecording, elapsedSeconds, error: recordError, startRecording, stopRecording, cancelRecording } = useVoiceRecorder(maxRecordingSeconds);
@@ -141,9 +142,15 @@ export const ChatArea = () => {
               {activeChat.name}
             </div>
             <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-              {activeChat.isGroup
-                ? `Group Channel · ${activeChat.members?.length || 0} members`
-                : (() => {
+              {typingUserNames.length > 0 ? (
+                <span style={{ color: 'var(--amber-primary)', fontStyle: 'italic' }}>
+                  {typingUserNames.length === 1
+                    ? `${typingUserNames[0]} is typing…`
+                    : `${typingUserNames.join(', ')} are typing…`}
+                </span>
+              ) : activeChat.isGroup ? (
+                `Group Channel · ${activeChat.members?.length || 0} members`
+              ) : (() => {
                     const online = isUserOnline(activeChat.id);
                     const lastSeen = !online && getLastSeen(activeChat.id);
                     return `${activeChat.department || 'Direct Message'} · ${
@@ -238,7 +245,7 @@ export const ChatArea = () => {
             <input type="text" className="input-field"
               placeholder={activeChat ? `Message ${activeChat.name}…` : 'Select a chat first…'}
               value={inputText}
-              onChange={e => setInputText(e.target.value)}
+              onChange={e => { setInputText(e.target.value); sendTypingSignal(); }}
               disabled={!activeChat}
               style={{ flex: 1, fontSize: 16, padding: '8px 12px', minHeight: 36 }} />
             <button type="submit" className="btn btn-primary"

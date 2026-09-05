@@ -55,14 +55,17 @@ export const subscribeToPresence = (user, supabaseMode, onChange) => {
 
     const emit = () => {
       const state = channel.presenceState();
-      onChange(new Set(Object.keys(state)));
+      const ids = Object.keys(state);
+      console.log('[presence] online users right now:', ids);
+      onChange(new Set(ids));
     };
 
     channel
       .on('presence', { event: 'sync' }, emit)
       .on('presence', { event: 'join' }, emit)
       .on('presence', { event: 'leave' }, emit)
-      .subscribe(async (status) => {
+      .subscribe(async (status, err) => {
+        console.log('[presence] presence:workspace subscription status:', status, err || '');
         if (status === 'SUBSCRIBED') {
           await channel.track({ online_at: new Date().toISOString() });
           emit();
@@ -72,7 +75,10 @@ export const subscribeToPresence = (user, supabaseMode, onChange) => {
     // Keep last_seen fresh in the database so offline users show a meaningful "last seen"
     // even after everyone's browser session has ended and there's no live presence left.
     const touchLastSeen = () => {
-      supabase.from('profiles').update({ last_seen: new Date().toISOString() }).eq('id', user.id);
+      supabase.from('profiles').update({ last_seen: new Date().toISOString() }).eq('id', user.id)
+        .then(({ error }) => {
+          if (error) console.error('[presence] touchLastSeen failed:', error.message);
+        });
     };
     touchLastSeen();
     const heartbeatTimer = setInterval(touchLastSeen, SUPABASE_HEARTBEAT_INTERVAL_MS);

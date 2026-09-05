@@ -476,7 +476,7 @@ export const MessageBubble = ({ message, isMe, onOpenLightbox, onEdit, onDelete 
                 {message.edited && <span style={{ fontStyle: 'italic' }}>edited</span>}
                 <span>{formatTime(message.timestamp)}</span>
                 {isMe && (
-                  <span>
+                  <span style={{ color: message.status === 'read' ? '#38BDF8' : 'inherit' }}>
                     {message.status === 'read' ? <CheckCheck size={14} /> : <Check size={14} />}
                   </span>
                 )}
