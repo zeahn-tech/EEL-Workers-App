@@ -1,4 +1,4 @@
-const CACHE_NAME = 'eel-messenger-v6';
+const CACHE_NAME = 'eel-messenger-v7';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -62,7 +62,9 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-// Push notification event listener
+// Push notification event listener — this is the one path that can reach someone whose
+// browser is fully closed; the rest of the app's notification system (sound, toast,
+// unread badges) only works while a tab is open and connected to Supabase Realtime.
 self.addEventListener('push', (event) => {
   let data = { title: 'EEL Messenger', body: 'New operational dispatch message received' };
   try {
@@ -80,13 +82,40 @@ self.addEventListener('push', (event) => {
     icon: './icon-192.png',
     badge: './favicon.svg',
     vibrate: [100, 50, 100],
+    tag: data.tag, // groups/replaces stacked notifications from the same conversation
     data: {
       dateOfArrival: Date.now(),
-      primaryKey: '1'
+      chatKey: data.tag
     }
   };
 
   event.waitUntil(
-    self.registration.showNotification(data.title, options)
+    (async () => {
+      // If the app is already open and visible somewhere, the in-app system (toast,
+      // sound, unread badge) already covers this live — showing an OS notification too
+      // would just be a redundant, slightly annoying double-notification for the exact
+      // same message. Only show the OS-level popup when nobody's actually looking.
+      const clientsList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      const isAppVisible = clientsList.some((client) => client.visibilityState === 'visible' && client.focused);
+      if (isAppVisible) return;
+
+      return self.registration.showNotification(data.title, options);
+    })()
+  );
+});
+
+// Clicking the notification focuses an already-open tab if one exists, or opens a new
+// one — either way landing them back in the app rather than just dismissing silently.
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(
+    (async () => {
+      const clientsList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      const existing = clientsList.find((client) => 'focus' in client);
+      if (existing) {
+        return existing.focus();
+      }
+      return self.clients.openWindow('./');
+    })()
   );
 });

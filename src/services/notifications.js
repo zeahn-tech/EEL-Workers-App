@@ -54,3 +54,41 @@ export const showBrowserNotification = ({ title, body, tag }) => {
     return null;
   }
 };
+
+// Web Push subscription endpoints/keys arrive base64url-encoded; the browser's
+// PushManager API needs them as a raw byte array instead.
+const urlBase64ToUint8Array = (base64String) => {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = atob(base64);
+  return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
+};
+
+// Subscribes this specific browser/device to real push — the kind that reaches someone
+// even when the app is fully closed, which nothing else in this app's notification
+// system can do. Requires notification permission to already be granted (call this right
+// after requestNotificationPermission succeeds) and a VAPID public key to be configured
+// for this deployment (see supabase/push-notifications.sql for the full setup). Returns
+// the raw PushSubscription on success — the caller is responsible for saving it
+// (see services/pushSubscriptions.js) so the server actually knows this device exists.
+export const subscribeToPush = async (vapidPublicKey) => {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    return { success: false, error: 'Push notifications are not supported in this browser.' };
+  }
+  if (!vapidPublicKey) {
+    return { success: false, error: 'Push notifications are not configured for this deployment yet.' };
+  }
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    let subscription = await registration.pushManager.getSubscription();
+    if (!subscription) {
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(vapidPublicKey)
+      });
+    }
+    return { success: true, subscription };
+  } catch (err) {
+    return { success: false, error: err.message || 'Could not subscribe to push notifications.' };
+  }
+};

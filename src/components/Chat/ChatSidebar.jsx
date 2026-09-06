@@ -2,7 +2,10 @@ import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useChat } from '../../context/ChatContext';
 import { Search, Plus, Hash, User, Settings, AlertTriangle, Bell, BellOff, BellRing } from 'lucide-react';
-import { getNotificationPermission, requestNotificationPermission } from '../../services/notifications';
+import { getNotificationPermission, requestNotificationPermission, subscribeToPush } from '../../services/notifications';
+import { savePushSubscription } from '../../services/pushSubscriptions';
+
+const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY;
 
 export const ChatSidebar = ({ onOpenGroupCreator, onSelectChat, onOpenAdmin, onOpenProfile }) => {
   const { users, currentUser, isAdmin, supabaseMode, refreshUsers, isUserOnline, getLastSeen } = useAuth();
@@ -13,6 +16,19 @@ export const ChatSidebar = ({ onOpenGroupCreator, onSelectChat, onOpenAdmin, onO
   const handleEnableNotifications = async () => {
     const result = await requestNotificationPermission();
     setNotifPermission(result);
+    if (result !== 'granted') return;
+
+    // Real push (works even with the app fully closed) is Supabase-only — local/offline
+    // mode has no server to receive a push subscription or send from, so this step is
+    // skipped there and the person still gets the in-app notification system on its own.
+    if (supabaseMode && currentUser) {
+      const pushResult = await subscribeToPush(VAPID_PUBLIC_KEY);
+      if (pushResult.success) {
+        await savePushSubscription(currentUser.id, pushResult.subscription);
+      } else {
+        console.error('[ChatSidebar] push subscription failed:', pushResult.error);
+      }
+    }
   };
 
   // The staff directory came back empty in Supabase mode. The very first account on a
@@ -56,9 +72,9 @@ export const ChatSidebar = ({ onOpenGroupCreator, onSelectChat, onOpenAdmin, onO
               <button
                 onClick={notifPermission === 'default' ? handleEnableNotifications : undefined}
                 title={
-                  notifPermission === 'granted' ? 'Notifications enabled'
+                  notifPermission === 'granted' ? (supabaseMode ? 'Push notifications enabled — you\'ll be notified even when the app is closed' : 'Notifications enabled')
                   : notifPermission === 'denied' ? 'Notifications blocked — enable them in your browser site settings'
-                  : 'Enable desktop notifications for new messages'
+                  : (supabaseMode ? 'Enable push notifications — get notified even when the app is closed' : 'Enable desktop notifications for new messages')
                 }
                 className="btn btn-secondary btn-icon"
                 style={{
