@@ -31,12 +31,18 @@
 --      generate-vapid-keys` and keep both values.
 --   b) Deploy the Edge Function in supabase/functions/send-push/ (see the
 --      README in that folder for the exact commands).
---   c) Set three secrets on that function: VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY,
---      and WEBHOOK_SECRET (a password you make up yourself — any long random
---      string works; it's what stops a stranger from calling your function
---      directly and spamming push notifications).
+--   c) Set three secrets on that function via `supabase secrets set` in your
+--      terminal (never inside index.ts itself): VAPID_PUBLIC_KEY,
+--      VAPID_PRIVATE_KEY, and WEBHOOK_SECRET (a password you make up
+--      yourself — any long random string works; it's what stops a stranger
+--      from calling your function directly and spamming push notifications).
 --   d) Replace the two placeholders below (YOUR_PROJECT_REF and
 --      YOUR_WEBHOOK_SECRET) with your real values before running this file.
+--      YOUR_PROJECT_REF is just the short ref from your project's URL (e.g.
+--      "abcdefghijk" from "https://abcdefghijk.supabase.co") — the line
+--      below needs the FULL function URL, not just the ref by itself.
+--      YOUR_WEBHOOK_SECRET must be the exact same string as the
+--      WEBHOOK_SECRET you set in step (c).
 --   e) Add your VAPID public key as VITE_VAPID_PUBLIC_KEY in your GitHub
 --      repo's Actions secrets (same place as your Supabase URL/key) — the
 --      public key is safe to expose client-side, that's what "public" means
@@ -99,10 +105,11 @@ security definer set search_path = public
 as $$
 begin
   perform extensions.http_post(
-    url := 'https://gzmaopvcoxkrvffkwzlx',
+    -- FULL function URL required here — the project ref alone is not a valid endpoint.
+    url := 'https://gzmaopvcoxkrvffkwzlx.supabase.co/functions/v1/send-push',
     headers := jsonb_build_object(
       'Content-Type', 'application/json',
-      'x-webhook-secret', 'v7Kq9mX2pL8zR4nT6wY3cH9sF1aB5dE8uJ0kN7qP4xZ6m'
+      'x-webhook-secret', 'N4xT8qV2mK7pR9zL5cH3wY6sF0aB1dE8uJ4nG7qX2vM9'
     ),
     body := jsonb_build_object(
       'id', NEW.id,

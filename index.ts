@@ -6,20 +6,28 @@
 // notification — this is what actually reaches someone whose browser is fully closed,
 // which nothing else in this app can do (everything else needs a live connection).
 //
+// IMPORTANT: every Deno.env.get(...) call below takes the NAME of a secret, never the
+// actual value. SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are provided automatically by
+// Supabase to every Edge Function — you never set those yourself. Only
+// VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, and WEBHOOK_SECRET need to be set manually, and
+// even those go in a `supabase secrets set NAME="value"` terminal command — never typed
+// into this file. If you ever see an actual key, URL, or password inside this file
+// instead of a short NAME in quotes, something has gone wrong.
+//
 // See supabase/functions/send-push/README.md for exact deployment steps.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import webpush from "npm:web-push@3.6.7";
 
-const SUPABASE_URL = Deno.env.get("https://gzmaopvcoxkrvffkwzlx.supabase.co")!;
-const SERVICE_ROLE_KEY = Deno.env.get("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd6bWFvcHZjb3hrcnZmZmt3emx4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4ODE5MDMxMSwiZXhwIjoyMTAzNzY2MzExfQ.rEi7CETEC5fBBWmMH5-86rLqEIt1YawAD3891ngmPNA")!;
-const VAPID_PUBLIC_KEY = Deno.env.get("BP0wZYCMnedKPLCNxDGUiGNWmiqqW7ZcobzyqcxDLeMpTI22Iu0m7uIZZ_RzHwFfq3VqfXD0G84Y5XlAATJjYu4")!;
-const VAPID_PRIVATE_KEY = Deno.env.get("beL4dZ0E8vYHuMLR06Bw5sxEM1_oFKC2UmTphVlgJ3Q")!;
-const WEBHOOK_SECRET = Deno.env.get("v7Kq9mX2pL8zR4nT6wY3cH9sF1aB5dE8uJ0kN7qP4xZ6m")!;
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const VAPID_PUBLIC_KEY = Deno.env.get("VAPID_PUBLIC_KEY")!;
+const VAPID_PRIVATE_KEY = Deno.env.get("VAPID_PRIVATE_KEY")!;
+const WEBHOOK_SECRET = Deno.env.get("WEBHOOK_SECRET")!;
 // Web Push requires a contact URI in the VAPID claims (browsers use this to reach you if
 // your server is misbehaving) — set VAPID_SUBJECT as a secret to your own email/site if
 // you want it to be something specific; this default works but is generic.
-const VAPID_SUBJECT = Deno.env.get("VAPID_SUBJECT") || "mailto:emmanuelzeahn45@gmail.com";
+const VAPID_SUBJECT = Deno.env.get("VAPID_SUBJECT") || "mailto:admin@example.com";
 
 webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 
